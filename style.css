@@ -1,73 +1,114 @@
+* { box-sizing: border-box; }
+
 body {
   margin: 0;
-  background: #2b2b2b;
+  background: #000;
   color: #e6e6e6;
   font-family: system-ui, sans-serif;
 }
 
+.hidden { display: none; }
+
+/* LOCK */
+
+#lockScreen {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.lockBox {
+  background: #111;
+  padding: 24px;
+  width: 300px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.lockBox input {
+  width: 100%;
+  padding: 10px;
+  margin-top: 12px;
+  background: #000;
+  border: 1px solid #333;
+  color: #fff;
+}
+
+.lockBox button {
+  width: 100%;
+  margin-top: 14px;
+  padding: 8px;
+  background: #222;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+}
+
+#lockError {
+  color: #ff5555;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+/* TOOLBAR */
+
 #toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px;
-  background: #333;
-  border-bottom: 1px solid #444;
+  background: #111;
+  border-bottom: 1px solid #222;
+  z-index: 10;
 }
 
-/* Buttons */
+.spacer { flex: 1; }
 
 #toolbar button {
-  background: #444;
+  background: #222;
   color: #fff;
   border: none;
   padding: 6px 10px;
   cursor: pointer;
-  font-size: 14px;
 }
 
-#toolbar button:hover {
-  background: #555;
-}
+#toolbar button:hover { background: #333; }
 
-/* Active formatting button */
-
-#toolbar button.active {
-  color: #00ff88;
-}
-
-/* Color picker — circular */
+#toolbar button.active { color: #00ff88; }
 
 #colorPicker {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: none;
+  border: none;
   cursor: pointer;
 }
 
-/* Editor */
+/* EDITOR */
 
 #editor {
-  padding: 20px;
-  min-height: calc(100vh - 60px);
+  padding: 80px 20px 20px;
+  min-height: 100vh;
   outline: none;
+  background: #000;
   line-height: 1.6;
 }
 
-/* Native bullet list */
+/* LISTS */
 
-ul {
-  padding-left: 24px;
-}
-
-/* Styled numbered list (native behavior) */
+ul { padding-left: 24px; }
 
 ol {
   list-style: none;
   padding-left: 0;
-  margin-left: 0;
   counter-reset: item;
 }
 
@@ -81,5 +122,4 @@ ol > li::before {
   content: "(" counter(item) ")";
   position: absolute;
   left: 0;
-  color: #e6e6e6;
 }

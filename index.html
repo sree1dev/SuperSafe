@@ -1,27 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>SecureText</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css">
 </head>
+<script src="https://accounts.google.com/gsi/client"></script>
 <body>
 
+<!-- LOCK SCREEN -->
+<div id="lockScreen">
+  <div class="lockBox">
+    <h2>SecureText</h2>
+    <input
+      id="passwordInput"
+      type="password"
+      placeholder="Password"
+      autocomplete="off"
+    >
+    <div id="lockError"></div>
+  </div>
+</div>
+
+<!-- CHANGE PASSWORD MODAL -->
+<div id="changeModal" class="hidden">
+  <div class="lockBox">
+    <h3>Change Password</h3>
+    <input id="oldPwd" type="password" placeholder="Current password">
+    <input id="newPwd" type="password" placeholder="New password">
+    <input id="newPwd2" type="password" placeholder="Confirm new password">
+    <div id="changeError"></div>
+    <button id="changeBtn">Re-encrypt</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+
   <div id="toolbar">
-    <button id="undoBtn" title="Undo">⟲</button>
-    <button id="redoBtn" title="Redo">⟳</button>
+    <button id="undoBtn">⟲</button>
+    <button id="redoBtn">⟳</button>
 
     <button data-cmd="bold" class="fmt">B</button>
     <button data-cmd="italic" class="fmt">I</button>
 
-    <input type="color" id="colorPicker" title="Text color">
+    <input type="color" id="colorPicker">
 
     <button id="bulletBtn">• List</button>
     <button id="numberBtn">(1)</button>
+
+    <span class="spacer"></span>
+    <button id="syncUpBtn">☁️ Upload</button>
+    <button id="syncDownBtn">☁️ Download</button>
+
+
+    <button id="encryptBtn">🔒 Encrypt</button>
+    <button id="changePwdBtn">🔑 Change</button>
+    <button id="logoutBtn">⏻ Logout</button>
   </div>
 
-  <div id="editor" contenteditable="true" spellcheck="false"></div>
+  <div
+    id="editor"
+    contenteditable="true"
+    spellcheck="false"
+  ></div>
 
-  <script src="app.js"></script>
+</div>
+
+<!-- IMPORTANT: defer -->
+<script src="app.js" defer></script>
+
 </body>
 </html>
