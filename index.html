@@ -1,23 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>SecureText</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <div id="toolbar">
-    <button data-cmd="bold"><b>B</b></button>
-    <button data-cmd="italic"><i>I</i></button>
-    <input type="color" id="colorPicker">
+    <button id="undoBtn" title="Undo">⟲</button>
+    <button id="redoBtn" title="Redo">⟳</button>
+
+    <button data-cmd="bold" class="fmt">B</button>
+    <button data-cmd="italic" class="fmt">I</button>
+
+    <input type="color" id="colorPicker" title="Text color">
+
     <button id="bulletBtn">• List</button>
     <button id="numberBtn">(1)</button>
   </div>
 
-  <div id="editor" contenteditable="true" spellcheck="false">
-    Start writing…
-  </div>
+  <div id="editor" contenteditable="true" spellcheck="false"></div>
 
   <script src="app.js"></script>
 </body>

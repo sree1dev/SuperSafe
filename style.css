@@ -6,24 +6,48 @@ body {
 }
 
 #toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px;
   background: #333;
   border-bottom: 1px solid #444;
 }
 
-#toolbar button,
-#toolbar input {
+/* Buttons */
+
+#toolbar button {
   background: #444;
-  color: #eee;
+  color: #fff;
   border: none;
   padding: 6px 10px;
-  margin-right: 6px;
   cursor: pointer;
+  font-size: 14px;
 }
 
 #toolbar button:hover {
   background: #555;
 }
+
+/* Active formatting button */
+
+#toolbar button.active {
+  color: #00ff88;
+}
+
+/* Color picker — circular */
+
+#colorPicker {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+/* Editor */
 
 #editor {
   padding: 20px;
@@ -32,12 +56,14 @@ body {
   line-height: 1.6;
 }
 
-/* -------- BULLET (native) -------- */
+/* Native bullet list */
+
 ul {
   padding-left: 24px;
 }
 
-/* -------- NUMBERED (styled ordered list) -------- */
+/* Styled numbered list (native behavior) */
+
 ol {
   list-style: none;
   padding-left: 0;
