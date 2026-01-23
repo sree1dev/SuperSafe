@@ -6,6 +6,9 @@ const AUTO_LOCK_MS = 60_000;
 const DB_NAME = "securetext";
 const STORE = "vault";
 
+const VAULT_FOLDER_NAME = "SecureText";
+const INDEX_FILENAME = ".index.stx";
+
 /* ================= ELEMENTS ================= */
 
 const lockScreen = document.getElementById("lockScreen");
@@ -22,25 +25,28 @@ const newPwd = document.getElementById("newPwd");
 const newPwd2 = document.getElementById("newPwd2");
 const changeError = document.getElementById("changeError");
 
+const explorer = document.getElementById("explorer");
+const treeRoot = document.getElementById("tree");
+
 /* ================= STATE ================= */
 
 let unlocked = false;
 let db = null;
-let lastEncrypted = null;
 let lockTimer = null;
 
-/* ================= LOG ================= */
+let vaultFolderId = null;
+let indexData = null;
 
-console.log("[INIT] Vault locked");
+let currentFileNode = null;
+let currentRemoteMeta = null;
 
 /* ================= DB ================= */
 
 function openDB() {
   return new Promise(resolve => {
     const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => {
+    req.onupgradeneeded = e =>
       e.target.result.createObjectStore(STORE);
-    };
     req.onsuccess = e => {
       db = e.target.result;
       resolve();
@@ -48,15 +54,8 @@ function openDB() {
   });
 }
 
-function saveEncrypted(payload) {
-  db.transaction(STORE, "readwrite").objectStore(STORE).put(payload, "data");
-}
-
-function loadEncrypted() {
-  return new Promise(resolve => {
-    const req = db.transaction(STORE).objectStore(STORE).get("data");
-    req.onsuccess = () => resolve(req.result || null);
-  });
+function dbPut(key, val) {
+  db.transaction(STORE, "readwrite").objectStore(STORE).put(val, key);
 }
 
 /* ================= CRYPTO ================= */
@@ -72,7 +71,6 @@ async function deriveKey(password) {
     false,
     ["deriveKey"]
   );
-
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
@@ -87,79 +85,223 @@ async function deriveKey(password) {
   );
 }
 
-async function encryptContent(password, html) {
+async function encrypt(password, obj) {
   const key = await deriveKey(password);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const cipher = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    enc.encode(html)
-  );
+  const data = enc.encode(JSON.stringify(obj));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data);
   return { iv: [...iv], data: [...new Uint8Array(cipher)] };
 }
 
-async function decryptContent(password, payload) {
+async function decrypt(password, payload) {
   const key = await deriveKey(password);
   const plain = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: new Uint8Array(payload.iv) },
     key,
     new Uint8Array(payload.data)
   );
-  return dec.decode(plain);
+  return JSON.parse(dec.decode(plain));
+}
+
+/* ================= GOOGLE DRIVE ================= */
+
+const CLIENT_ID =
+  "628807779499-ql68bc363klkaiuesakd1eknc38qmcah.apps.googleusercontent.com";
+const SCOPE = "https://www.googleapis.com/auth/drive.file";
+let gToken = null;
+
+function gAuth() {
+  return new Promise((resolve, reject) => {
+    google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPE,
+      callback: r => {
+        if (r.error) reject(r);
+        gToken = r.access_token;
+        resolve();
+      }
+    }).requestAccessToken();
+  });
+}
+
+function gFetch(url, opts = {}) {
+  opts.headers = {
+    ...(opts.headers || {}),
+    Authorization: `Bearer ${gToken}`
+  };
+  return fetch(url, opts);
+}
+
+/* ================= VAULT ================= */
+
+async function ensureVaultFolder() {
+  const q = encodeURIComponent(
+    `name='${VAULT_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
+  );
+  const res = await gFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`
+  );
+  const js = await res.json();
+  if (js.files.length) return js.files[0].id;
+
+  const create = await gFetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: VAULT_FOLDER_NAME,
+      mimeType: "application/vnd.google-apps.folder"
+    })
+  });
+  return (await create.json()).id;
+}
+
+/* ================= INDEX ================= */
+
+function defaultIndex() {
+  return {
+    tree: {
+      id: "root",
+      type: "folder",
+      name: "Root",
+      children: []
+    }
+  };
+}
+
+async function loadIndex() {
+  const q = encodeURIComponent(
+    `name='${INDEX_FILENAME}' and '${vaultFolderId}' in parents and trashed=false`
+  );
+  const res = await gFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`
+  );
+  const js = await res.json();
+
+  if (!js.files.length) {
+    indexData = defaultIndex();
+    await saveIndex();
+    return;
+  }
+
+  const payload = await downloadFile(js.files[0].id);
+  indexData = await decrypt(MASTER_PASSWORD, payload);
+}
+
+async function saveIndex() {
+  const payload = await encrypt(MASTER_PASSWORD, indexData);
+  await uploadFile(INDEX_FILENAME, payload);
+}
+
+/* ================= TREE ================= */
+
+function renderTree() {
+  treeRoot.innerHTML = "";
+  renderNode(indexData.tree, treeRoot);
+}
+
+function renderNode(node, container) {
+  const div = document.createElement("div");
+  div.className = "node " + node.type;
+  div.textContent = node.name;
+  container.appendChild(div);
+
+  if (node.type === "file") {
+    div.onclick = () => openFile(node);
+  } else {
+    const kids = document.createElement("div");
+    kids.className = "children";
+    div.onclick = () => kids.classList.toggle("hidden");
+    container.appendChild(kids);
+    node.children.forEach(c => renderNode(c, kids));
+  }
+}
+
+/* ================= FILE OPS ================= */
+
+async function openFile(node) {
+  const meta = await findFile(node.id);
+  const payload = await downloadFile(meta.id);
+  const data = await decrypt(MASTER_PASSWORD, payload);
+
+  currentFileNode = node;
+  currentRemoteMeta = meta;
+  editor.innerHTML = data.html;
+}
+
+async function saveCurrentFile() {
+  if (!currentFileNode) return;
+
+  const payload = await encrypt(MASTER_PASSWORD, {
+    html: editor.innerHTML
+  });
+
+  await uploadFile(currentFileNode.id, payload);
+  await saveIndex();
+}
+
+/* ================= DRIVE FILE ================= */
+
+async function findFile(name) {
+  const q = encodeURIComponent(
+    `name='${name}' and '${vaultFolderId}' in parents and trashed=false`
+  );
+  const res = await gFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,modifiedTime)`
+  );
+  return (await res.json()).files[0];
+}
+
+async function uploadFile(name, payload) {
+  const existing = await findFile(name);
+  const boundary = "x";
+  const body =
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
+    JSON.stringify({ name, parents: [vaultFolderId] }) +
+    `\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n` +
+    JSON.stringify(payload) +
+    `\r\n--${boundary}--`;
+
+  const url = existing
+    ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+
+  await gFetch(url, {
+    method: existing ? "PATCH" : "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+}
+
+async function downloadFile(id) {
+  const res = await gFetch(
+    `https://www.googleapis.com/drive/v3/files/${id}?alt=media`
+  );
+  return res.json();
 }
 
 /* ================= UNLOCK ================= */
 
 function unlockVault() {
-  if (unlocked) return;
-
-  console.log("[UNLOCK] SUCCESS");
   unlocked = true;
-
   lockScreen.remove();
   app.classList.remove("hidden");
-
   resetAutoLock();
-
-  if (lastEncrypted) {
-    decryptContent(MASTER_PASSWORD, lastEncrypted).then(html => {
-      editor.innerHTML = html;
-    });
-  }
-
-  editor.focus();
 }
 
-/* 🔥 FIXED AUTO-UNLOCK LOGIC 🔥 */
-passwordInput.addEventListener("input", () => {
-  const typed = passwordInput.value;
-
-  console.log("[TYPE]", typed);
-
-  if (typed.length < MASTER_PASSWORD.length) {
-    lockError.textContent = "";
-    return;
-  }
-
-  if (typed === MASTER_PASSWORD) {
-    unlockVault();
-  } else {
-    lockError.textContent = "Wrong password";
-  }
-});
+passwordInput.oninput = e => {
+  if (e.target.value === MASTER_PASSWORD) unlockVault();
+  else lockError.textContent = "Wrong password";
+};
 
 /* ================= AUTO LOCK ================= */
 
 function resetAutoLock() {
   clearTimeout(lockTimer);
-  lockTimer = setTimeout(() => {
-    console.log("[AUTOLOCK]");
-    location.reload();
-  }, AUTO_LOCK_MS);
+  lockTimer = setTimeout(() => location.reload(), AUTO_LOCK_MS);
 }
 
-["keydown", "mousedown", "mousemove", "touchstart"].forEach(evt =>
-  document.addEventListener(evt, resetAutoLock, true)
+["keydown", "mousedown", "mousemove", "touchstart"].forEach(e =>
+  document.addEventListener(e, resetAutoLock, true)
 );
 
 /* ================= FORMATTING ================= */
@@ -173,182 +315,18 @@ document.querySelectorAll("[data-cmd]").forEach(btn => {
 
 colorPicker.oninput = () => {
   document.execCommand("foreColor", false, colorPicker.value);
-  editor.focus();
-};
-
-document.getElementById("bulletBtn").onclick = () => {
-  document.execCommand("insertUnorderedList");
-};
-
-document.getElementById("numberBtn").onclick = () => {
-  document.execCommand("insertOrderedList");
-};
-
-document.getElementById("undoBtn").onclick = () => {
-  document.execCommand("undo");
-};
-
-document.getElementById("redoBtn").onclick = () => {
-  document.execCommand("redo");
 };
 
 /* ================= BUTTONS ================= */
 
-document.getElementById("encryptBtn").onclick = async () => {
-  if (!unlocked) return;
-  lastEncrypted = await encryptContent(MASTER_PASSWORD, editor.innerHTML);
-  saveEncrypted(lastEncrypted);
-  console.log("[ENCRYPT] Saved");
-};
-
-document.getElementById("logoutBtn").onclick = () => {
-  console.log("[LOGOUT]");
-  location.reload();
-};
-
-document.getElementById("changePwdBtn").onclick = () => {
-  changeModal.classList.remove("hidden");
-};
-
-document.getElementById("changeBtn").onclick = async () => {
-  if (oldPwd.value !== MASTER_PASSWORD) {
-    changeError.textContent = "Wrong current password";
-    return;
-  }
-  if (newPwd.value !== newPwd2.value || !newPwd.value) {
-    changeError.textContent = "New passwords do not match";
-    return;
-  }
-
-  const plaintext = lastEncrypted
-    ? await decryptContent(MASTER_PASSWORD, lastEncrypted)
-    : editor.innerHTML;
-
-  MASTER_PASSWORD = newPwd.value;
-  lastEncrypted = await encryptContent(MASTER_PASSWORD, plaintext);
-  saveEncrypted(lastEncrypted);
-
-  changeModal.classList.add("hidden");
-  oldPwd.value = newPwd.value = newPwd2.value = "";
-};
-
-/* ================= GOOGLE DRIVE SYNC ================= */
-
-const GDRIVE_CLIENT_ID = "628807779499-ql68bc363klkaiuesakd1eknc38qmcah.apps.googleusercontent.com";
-const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const VAULT_FILENAME = "securetext.vault";
-
-let gToken = null;
-
-function gAuth() {
-  return new Promise((resolve, reject) => {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: GDRIVE_CLIENT_ID,
-      scope: GDRIVE_SCOPE,
-      callback: (resp) => {
-        if (resp.error) reject(resp);
-        gToken = resp.access_token;
-        console.log("[GDRIVE] Auth OK");
-        resolve();
-      }
-    });
-    client.requestAccessToken();
-  });
-}
-
-async function gFetch(url, opts = {}) {
-  opts.headers = {
-    ...(opts.headers || {}),
-    Authorization: `Bearer ${gToken}`
-  };
-  return fetch(url, opts);
-}
-
-async function findVaultFile() {
-  const q = encodeURIComponent(`name='${VAULT_FILENAME}' and trashed=false`);
-  const res = await gFetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`
-  );
-  const js = await res.json();
-  return js.files?.[0]?.id || null;
-}
-
-async function uploadVault(payload) {
-  await gAuth();
-  const fileId = await findVaultFile();
-
-  const meta = { name: VAULT_FILENAME };
-  const boundary = "foo_bar_baz";
-  const body =
-    `--${boundary}\r\n` +
-    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify(meta) + `\r\n` +
-    `--${boundary}\r\n` +
-    `Content-Type: application/octet-stream\r\n\r\n` +
-    JSON.stringify(payload) + `\r\n` +
-    `--${boundary}--`;
-
-  const url = fileId
-    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
-    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
-
-  const method = fileId ? "PATCH" : "POST";
-
-  const res = await gFetch(url, {
-    method,
-    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-    body
-  });
-
-  console.log("[GDRIVE] Upload status:", res.status);
-}
-
-async function downloadVault() {
-  await gAuth();
-  const fileId = await findVaultFile();
-  if (!fileId) {
-    console.log("[GDRIVE] No vault found");
-    return null;
-  }
-  const res = await gFetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
-  );
-  const payload = await res.json();
-  console.log("[GDRIVE] Downloaded");
-  return payload;
-}
-
-/* ================= WIRED BUTTONS ================= */
-
-document.getElementById("syncUpBtn").onclick = async () => {
-  if (!lastEncrypted) {
-    console.log("[GDRIVE] Nothing to upload");
-    return;
-  }
-  await uploadVault(lastEncrypted);
-};
-
-document.getElementById("syncDownBtn").onclick = async () => {
-  const payload = await downloadVault();
-  if (!payload) return;
-
-  // replace local vault with downloaded ciphertext
-  lastEncrypted = payload;
-  saveEncrypted(lastEncrypted);
-
-  // decrypt into editor (requires unlocked vault)
-  if (unlocked) {
-    const html = await decryptContent(MASTER_PASSWORD, lastEncrypted);
-    editor.innerHTML = html;
-  }
-};
-
-
+document.getElementById("encryptBtn").onclick = saveCurrentFile;
 
 /* ================= INIT ================= */
 
 (async () => {
   await openDB();
-  lastEncrypted = await loadEncrypted();
-  editor.innerHTML = "<br>";
+  await gAuth();
+  vaultFolderId = await ensureVaultFolder();
+  await loadIndex();
+  renderTree();
 })();
