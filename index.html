@@ -4,25 +4,20 @@
   <meta charset="UTF-8">
   <title>SecureText</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://accounts.google.com/gsi/client"></script>
 </head>
-<script src="https://accounts.google.com/gsi/client"></script>
 <body>
 
 <!-- LOCK SCREEN -->
 <div id="lockScreen">
   <div class="lockBox">
     <h2>SecureText</h2>
-    <input
-      id="passwordInput"
-      type="password"
-      placeholder="Password"
-      autocomplete="off"
-    >
+    <input id="passwordInput" type="password" placeholder="Password" autocomplete="off">
     <div id="lockError"></div>
   </div>
 </div>
 
-<!-- CHANGE PASSWORD MODAL -->
+<!-- CHANGE PASSWORD -->
 <div id="changeModal" class="hidden">
   <div class="lockBox">
     <h3>Change Password</h3>
@@ -37,47 +32,51 @@
 <!-- APP -->
 <div id="app" class="hidden">
 
-  <div id="toolbar">
-    <button id="undoBtn">⟲</button>
-    <button id="redoBtn">⟳</button>
-
-    <button data-cmd="bold" class="fmt">B</button>
-    <button data-cmd="italic" class="fmt">I</button>
-
-    <input type="color" id="colorPicker">
-
-    <button id="bulletBtn">• List</button>
-    <button id="numberBtn">(1)</button>
-
-    <span class="spacer"></span>
-    <button id="syncUpBtn">☁️ Upload</button>
-    <button id="syncDownBtn">☁️ Download</button>
-
-
-    <button id="encryptBtn">🔒 Encrypt</button>
-    <button id="changePwdBtn">🔑 Change</button>
-    <button id="logoutBtn">⏻ Logout</button>
+  <!-- EXPLORER -->
+  <div id="explorer">
+    <div class="explorer-header">
+      Files
+      <div class="explorer-actions">
+        <button id="newFolderBtn">📁+</button>
+        <button id="newFileBtn">📄+</button>
+      </div>
+    </div>
+    <div id="tree"></div>
   </div>
 
-<div id="explorer">
-  <div class="explorer-header">Files</div>
-  <div id="tree"></div>
-  <button onclick="document.getElementById('explorer').classList.toggle('open')">
-  📁
-</button>
+  <!-- MAIN -->
+  <div id="main">
 
+    <!-- TOOLBAR -->
+    <div id="toolbar">
+      <button id="toggleExplorerBtn">☰</button>
+
+      <button id="undoBtn">⟲</button>
+      <button id="redoBtn">⟳</button>
+
+      <button data-cmd="bold" class="fmt">B</button>
+      <button data-cmd="italic" class="fmt">I</button>
+
+      <input type="color" id="colorPicker">
+
+      <button id="bulletBtn">• List</button>
+      <button id="numberBtn">(1)</button>
+
+      <span class="spacer"></span>
+
+      <button id="syncUpBtn">☁ Upload</button>
+      <button id="syncDownBtn">☁ Download</button>
+      <button id="encryptBtn">🔒 Encrypt</button>
+      <button id="changePwdBtn">🔑 Change</button>
+      <button id="logoutBtn">⏻ Logout</button>
+    </div>
+
+    <!-- EDITOR -->
+    <div id="editor" contenteditable="true" spellcheck="false"></div>
+
+  </div>
 </div>
 
-  <div
-    id="editor"
-    contenteditable="true"
-    spellcheck="false"
-  ></div>
-
-</div>
-
-<!-- IMPORTANT: defer -->
 <script src="app.js" defer></script>
-
 </body>
 </html>
