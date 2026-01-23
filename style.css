@@ -1,0 +1,37 @@
+body {
+  margin: 0;
+  background: #2b2b2b; /* dark grey, not black */
+  color: #e6e6e6;
+  font-family: system-ui, sans-serif;
+}
+
+#toolbar {
+  padding: 10px;
+  background: #333;
+  border-bottom: 1px solid #444;
+}
+
+#toolbar button,
+#toolbar input {
+  background: #444;
+  color: #eee;
+  border: none;
+  padding: 6px 10px;
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+#toolbar button:hover {
+  background: #555;
+}
+
+#editor {
+  padding: 20px;
+  min-height: calc(100vh - 60px);
+  outline: none;
+  line-height: 1.6;
+}
+
+.number-line {
+  display: block;
+}
