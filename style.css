@@ -9,9 +9,9 @@ body {
 
 .hidden { display: none; }
 
-/* LOCK */
+/* LOCK / MODALS */
 
-#lockScreen {
+#lockScreen, .adminBox {
   position: fixed;
   inset: 0;
   background: #000;
@@ -24,15 +24,19 @@ body {
 .lockBox {
   background: #111;
   padding: 24px;
-  width: 300px;
+  width: 320px;
   border-radius: 6px;
   text-align: center;
+}
+
+.adminBox {
+  width: 360px;
 }
 
 .lockBox input {
   width: 100%;
   padding: 10px;
-  margin-top: 12px;
+  margin-top: 10px;
   background: #000;
   border: 1px solid #333;
   color: #fff;
@@ -40,14 +44,18 @@ body {
 
 .lockBox button {
   width: 100%;
-  margin-top: 14px;
+  margin-top: 12px;
   padding: 8px;
   background: #222;
   border: none;
   color: #fff;
+  cursor: pointer;
 }
 
-#lockError { color: #ff5555; margin-top: 8px; }
+.adminSection {
+  margin-top: 16px;
+  text-align: left;
+}
 
 /* APP */
 
@@ -100,18 +108,11 @@ body {
   border-bottom: 1px solid #222;
 }
 
-.spacer { flex: 1; }
-
-#toolbar button {
-  background: #222;
-  border: none;
-  color: #fff;
-  padding: 6px 10px;
-}
-
 #toolbar button.active {
   color: #00ff88;
 }
+
+.spacer { flex: 1; }
 
 /* EDITOR */
 
@@ -123,36 +124,14 @@ body {
   overflow-y: auto;
 }
 
-/* LISTS */
-
-ul { padding-left: 24px; }
-
-ol {
-  list-style: none;
-  padding-left: 0;
-  counter-reset: item;
-}
-
-ol > li {
-  counter-increment: item;
-  padding-left: 36px;
-  position: relative;
-}
-
-ol > li::before {
-  content: "(" counter(item) ")";
-  position: absolute;
-  left: 0;
-}
-
 /* MOBILE */
 
 @media (max-width: 768px) {
   #explorer {
     position: fixed;
-    left: 0;
     top: 0;
     bottom: 0;
+    left: 0;
     transform: translateX(-100%);
     transition: transform .2s;
     z-index: 20;

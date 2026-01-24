@@ -17,15 +17,39 @@
   </div>
 </div>
 
-<!-- CHANGE PASSWORD -->
-<div id="changeModal" class="hidden">
+<!-- CHANGE PASSWORD (ADMIN ONLY) -->
+<div id="changePwdModal" class="hidden">
   <div class="lockBox">
-    <h3>Change Password</h3>
+    <h3>Change Vault Password</h3>
     <input id="oldPwd" type="password" placeholder="Current password">
     <input id="newPwd" type="password" placeholder="New password">
     <input id="newPwd2" type="password" placeholder="Confirm new password">
     <div id="changeError"></div>
-    <button id="changeBtn">Re-encrypt</button>
+    <button id="changePwdConfirmBtn">Re-encrypt Vault</button>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="adminModal" class="hidden">
+  <div class="lockBox adminBox">
+    <h3>Admin</h3>
+
+    <div class="adminSection">
+      <div><b>Google Drive</b></div>
+      <div id="driveStatus">Not connected</div>
+      <button id="connectDriveBtn">Connect / Change Drive Account</button>
+    </div>
+
+    <div class="adminSection">
+      <button id="uploadVaultBtn">Upload Vault</button>
+      <button id="downloadVaultBtn">Download Vault</button>
+    </div>
+
+    <div class="adminSection">
+      <button id="openChangePwdBtn">Change Vault Password</button>
+    </div>
+
+    <button id="closeAdminBtn">Close</button>
   </div>
 </div>
 
@@ -36,7 +60,7 @@
   <div id="explorer">
     <div class="explorer-header">
       Files
-      <div class="explorer-actions">
+      <div>
         <button id="newFolderBtn">📁+</button>
         <button id="newFileBtn">📄+</button>
       </div>
@@ -64,10 +88,8 @@
 
       <span class="spacer"></span>
 
-      <button id="syncUpBtn">☁ Upload</button>
-      <button id="syncDownBtn">☁ Download</button>
       <button id="encryptBtn">🔒 Encrypt</button>
-      <button id="changePwdBtn">🔑 Change</button>
+      <button id="adminBtn">🛡 Admin</button>
       <button id="logoutBtn">⏻ Logout</button>
     </div>
 
