@@ -1,4 +1,6 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
@@ -6,12 +8,19 @@ body {
   color: #e6e6e6;
   font-family: system-ui, sans-serif;
 }
+.adminBox .adminBox {
+  display: none !important;
+}
 
-.hidden { display: none; }
 
-/* LOCK / MODALS */
+.hidden {
+  display: none;
+}
 
-#lockScreen, .adminBox {
+/* ================= LOCK / MODALS ================= */
+
+#lockScreen,
+.adminOverlay {
   position: fixed;
   inset: 0;
   background: #000;
@@ -20,8 +29,16 @@ body {
   justify-content: center;
   z-index: 1000;
 }
+.adminContent {
+  background: #111;
+  padding: 24px;
+  width: 360px;
+  border-radius: 8px;
+}
 
-.lockBox {
+
+.lockBox,
+.adminBox {
   background: #111;
   padding: 24px;
   width: 320px;
@@ -33,7 +50,8 @@ body {
   width: 360px;
 }
 
-.lockBox input {
+.lockBox input,
+.adminBox input {
   width: 100%;
   padding: 10px;
   margin-top: 10px;
@@ -42,7 +60,8 @@ body {
   color: #fff;
 }
 
-.lockBox button {
+.lockBox button,
+.adminBox button {
   width: 100%;
   margin-top: 12px;
   padding: 8px;
@@ -52,12 +71,19 @@ body {
   cursor: pointer;
 }
 
+#lockError,
+#changeError {
+  margin-top: 8px;
+  color: #ff5555;
+  font-size: 13px;
+}
+
 .adminSection {
   margin-top: 16px;
   text-align: left;
 }
 
-/* APP */
+/* ================= APP LAYOUT ================= */
 
 #app {
   display: flex;
@@ -65,20 +91,26 @@ body {
   overflow: hidden;
 }
 
-/* EXPLORER */
+/* ================= EXPLORER ================= */
 
 #explorer {
-  width: 240px;
+  width: 260px;
   background: #0d0d0d;
   border-right: 1px solid #222;
   overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .explorer-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 10px;
   border-bottom: 1px solid #222;
+}
+
+.explorer-actions button {
+  margin-left: 6px;
 }
 
 .node {
@@ -86,11 +118,15 @@ body {
   cursor: pointer;
 }
 
-.node:hover { background: #222; }
+.node:hover {
+  background: #222;
+}
 
-.children { padding-left: 14px; }
+.children {
+  padding-left: 14px;
+}
 
-/* MAIN */
+/* ================= MAIN ================= */
 
 #main {
   flex: 1;
@@ -98,7 +134,7 @@ body {
   flex-direction: column;
 }
 
-/* TOOLBAR */
+/* ================= TOOLBAR ================= */
 
 #toolbar {
   display: flex;
@@ -106,15 +142,18 @@ body {
   padding: 10px;
   background: #111;
   border-bottom: 1px solid #222;
+  align-items: center;
 }
 
 #toolbar button.active {
   color: #00ff88;
 }
 
-.spacer { flex: 1; }
+.spacer {
+  flex: 1;
+}
 
-/* EDITOR */
+/* ================= EDITOR ================= */
 
 #editor {
   flex: 1;
@@ -124,7 +163,7 @@ body {
   overflow-y: auto;
 }
 
-/* MOBILE */
+/* ================= MOBILE ================= */
 
 @media (max-width: 768px) {
   #explorer {
@@ -133,10 +172,15 @@ body {
     bottom: 0;
     left: 0;
     transform: translateX(-100%);
-    transition: transform .2s;
+    transition: transform 0.2s ease;
     z-index: 20;
   }
+
   #explorer.open {
     transform: translateX(0);
   }
+}
+
+#changePwdModal.hidden {
+  display: none !important;
 }

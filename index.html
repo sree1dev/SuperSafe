@@ -1,75 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>SecureText</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://accounts.google.com/gsi/client"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
 
 <!-- LOCK SCREEN -->
 <div id="lockScreen">
   <div class="lockBox">
     <h2>SecureText</h2>
-    <input id="passwordInput" type="password" placeholder="Password" autocomplete="off">
+    <input
+      id="passwordInput"
+      type="password"
+      placeholder="Vault password"
+      autocomplete="off"
+    />
     <div id="lockError"></div>
   </div>
 </div>
 
-<!-- CHANGE PASSWORD (ADMIN ONLY) -->
-<div id="changePwdModal" class="hidden">
-  <div class="lockBox">
-    <h3>Change Vault Password</h3>
-    <input id="oldPwd" type="password" placeholder="Current password">
-    <input id="newPwd" type="password" placeholder="New password">
-    <input id="newPwd2" type="password" placeholder="Confirm new password">
-    <div id="changeError"></div>
-    <button id="changePwdConfirmBtn">Re-encrypt Vault</button>
-  </div>
-</div>
-
-<!-- ADMIN PANEL -->
-<div id="adminModal" class="hidden">
-  <div class="lockBox adminBox">
+<!-- ADMIN MODAL -->
+<div id="adminModal" class="adminBox hidden">
+  <div class="adminContent">
     <h3>Admin</h3>
 
     <div class="adminSection">
-      <div><b>Google Drive</b></div>
+      <strong>Google Drive</strong>
       <div id="driveStatus">Not connected</div>
-      <button id="connectDriveBtn">Connect / Change Drive Account</button>
+      <button id="connectDriveBtn">Connect Drive</button>
+      <button id="uploadVaultBtn">Upload</button>
+      <button id="downloadVaultBtn">Download</button>
     </div>
 
     <div class="adminSection">
-      <button id="uploadVaultBtn">Upload Vault</button>
-      <button id="downloadVaultBtn">Download Vault</button>
-    </div>
-
-    <div class="adminSection">
-      <button id="openChangePwdBtn">Change Vault Password</button>
+      <strong>Security</strong>
+      <button id="openChangePwdBtn">Change Password</button>
     </div>
 
     <button id="closeAdminBtn">Close</button>
   </div>
 </div>
+<!-- CHANGE PASSWORD MODAL -->
+<div id="changePwdModal" class="adminBox hidden">
+  <div class="adminContent">
+    <h3>Change Password</h3>
+    <input id="oldPwd" type="password" placeholder="Current password" />
+    <input id="newPwd" type="password" placeholder="New password" />
+    <input id="newPwd2" type="password" placeholder="Confirm new password" />
+    <div id="changeError"></div>
+    <button id="changePwdConfirmBtn">Re-encrypt Vault</button>
+  </div>
+</div>
+
 
 <!-- APP -->
 <div id="app" class="hidden">
 
   <!-- EXPLORER -->
-  <div id="explorer">
+  <aside id="explorer">
     <div class="explorer-header">
-      Files
-      <div>
-        <button id="newFolderBtn">📁+</button>
-        <button id="newFileBtn">📄+</button>
+      <span>Files</span>
+      <div class="explorer-actions">
+        <button id="newFolderBtn">＋📁</button>
+        <button id="newFileBtn">＋📄</button>
       </div>
     </div>
     <div id="tree"></div>
-  </div>
+  </aside>
 
   <!-- MAIN -->
-  <div id="main">
+  <main id="main">
 
     <!-- TOOLBAR -->
     <div id="toolbar">
@@ -78,27 +83,38 @@
       <button id="undoBtn">⟲</button>
       <button id="redoBtn">⟳</button>
 
-      <button data-cmd="bold" class="fmt">B</button>
-      <button data-cmd="italic" class="fmt">I</button>
+      <button class="fmt" data-cmd="bold">B</button>
+      <button class="fmt" data-cmd="italic">I</button>
 
-      <input type="color" id="colorPicker">
+      <input type="color" id="colorPicker" />
 
-      <button id="bulletBtn">• List</button>
-      <button id="numberBtn">(1)</button>
+      <button id="bulletBtn">•</button>
+      <button id="numberBtn">1.</button>
 
       <span class="spacer"></span>
 
-      <button id="encryptBtn">🔒 Encrypt</button>
-      <button id="adminBtn">🛡 Admin</button>
-      <button id="logoutBtn">⏻ Logout</button>
+      <button id="encryptBtn">Encrypt</button>
+      <button id="adminBtn">Admin</button>
+      <button id="logoutBtn">Logout</button>
     </div>
 
     <!-- EDITOR -->
-    <div id="editor" contenteditable="true" spellcheck="false"></div>
+    <div
+      id="editor"
+      contenteditable="true"
+      spellcheck="false"
+    ></div>
 
-  </div>
+  </main>
 </div>
 
-<script src="app.js" defer></script>
+<!-- GOOGLE IDENTITY -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<!-- APP SCRIPTS DO NOT REORDER THIS-->
+<script src="js/core.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/drive.js"></script>
+
 </body>
 </html>
