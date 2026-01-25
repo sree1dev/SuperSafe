@@ -1,146 +1,224 @@
 "use strict";
-/* ================= GOOGLE CONFIG ================= */
 
-const GDRIVE_CLIENT_ID =
-  "628807779499-ql68bc363klkaiuesakd1eknc38qmcah.apps.googleusercontent.com";
+/* =========================================================
+   DRIVE — GOOGLE DRIVE MIRROR LAYER
+========================================================= */
 
-const GDRIVE_SCOPE =
-  "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file";
+(() => {
+  const CLIENT_ID =
+    "628807779499-ql68bc363klkaiuesakd1eknc38qmcah.apps.googleusercontent.com";
 
-const VAULT_FOLDER_NAME = "SecureText";
-const VAULT_FILENAME = "vault.stx";
+  const SCOPES = [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "openid",
+    "profile"
+  ].join(" ");
 
-/* ================= OAUTH ================= */
+  let accessToken = null;
 
-function gAuth() {
-  return new Promise((resolve, reject) => {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: GDRIVE_CLIENT_ID,
-      scope: GDRIVE_SCOPE,
-      callback: resp => {
-        if (resp.error) {
-          reject(resp);
-          return;
+  /* ===================== AUTH ===================== */
+
+  function auth() {
+    LOG("DRIVE", "oauth:start");
+
+    return new Promise((resolve, reject) => {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: token => {
+          if (token.error) {
+            LOG("DRIVE", "oauth:error", token.error);
+            reject(token);
+            return;
+          }
+          accessToken = token.access_token;
+          LOG("DRIVE", "oauth:success");
+          resolve();
         }
-        gToken = resp.access_token;
-        resolve();
-      }
+      });
+
+      client.requestAccessToken();
     });
-
-    client.requestAccessToken();
-  });
-}
-
-function gFetch(url, opts = {}) {
-  opts.headers = {
-    ...(opts.headers || {}),
-    Authorization: `Bearer ${gToken}`
-  };
-  return fetch(url, opts);
-}
-
-/* ================= DRIVE ================= */
-
-async function ensureVaultFolder() {
-  const q = encodeURIComponent(
-    `name='${VAULT_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
-  );
-
-  const res = await gFetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`
-  );
-  const js = await res.json();
-
-  if (js.files.length) return js.files[0].id;
-
-  const create = await gFetch(
-    "https://www.googleapis.com/drive/v3/files",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: VAULT_FOLDER_NAME,
-        mimeType: "application/vnd.google-apps.folder"
-      })
-    }
-  );
-
-  return (await create.json()).id;
-}
-
-async function findVaultFile() {
-  const q = encodeURIComponent(
-    `name='${VAULT_FILENAME}' and '${vaultFolderId}' in parents and trashed=false`
-  );
-
-  const res = await gFetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`
-  );
-
-  const js = await res.json();
-  return js.files[0] || null;
-}
-
-/* ================= ADMIN CONNECT ================= */
-
-async function connectDriveAsAdmin() {
-  await gAuth();
-
-  const info = await fetch(
-    "https://www.googleapis.com/oauth2/v3/userinfo",
-    { headers: { Authorization: `Bearer ${gToken}` } }
-  );
-  const profile = await info.json();
-
-  if (!vaultData.admin.initialized) {
-    vaultData.admin.initialized = true;
-    vaultData.admin.googleEmail = profile.email;
-  } else if (vaultData.admin.googleEmail !== profile.email) {
-    throw new Error("Vault locked to another Google account");
   }
 
-  vaultFolderId = await ensureVaultFolder();
-}
+  function gfetch(url, opts = {}) {
+    return fetch(url, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+  }
 
-/* ================= SAVE / LOAD ================= */
+  /* ===================== PROFILE ===================== */
 
-async function saveVaultRemote() {
-  const encrypted = await encryptVault(MASTER_PASSWORD, vaultData);
-  dbPut("vault", encrypted);
+  async function fetchProfile() {
+    LOG("DRIVE", "profile:fetch");
 
-  const existing = await findVaultFile();
-  const boundary = "vault_boundary";
+    const r = await gfetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo"
+    );
+    const p = await r.json();
 
-  const body =
-    `--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
-    JSON.stringify({ name: VAULT_FILENAME, parents: [vaultFolderId] }) +
-    `\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n` +
-    JSON.stringify(encrypted) +
-    `\r\n--${boundary}--`;
+    LOG("DRIVE", "profile:ok", p.email);
+    return p.email;
+  }
 
-  const url = existing
-    ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart`
-    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+  /* ===================== ROOT FOLDER ===================== */
 
-  await gFetch(url, {
-    method: existing ? "PATCH" : "POST",
-    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-    body
-  });
-}
+  async function ensureRoot() {
+    LOG("DRIVE", "root:ensure");
 
-async function loadVaultRemote() {
-  const remote = await findVaultFile();
-  if (!remote) throw new Error("No vault found");
+    const q = encodeURIComponent(
+      "name='SecureText' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    );
 
-  const res = await gFetch(
-    `https://www.googleapis.com/drive/v3/files/${remote.id}?alt=media`
-  );
-  const encrypted = await res.json();
+    const r = await gfetch(
+      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`
+    );
+    const j = await r.json();
 
-  vaultData = await decryptVault(MASTER_PASSWORD, encrypted);
-  dbPut("vault", encrypted);
+    if (j.files.length) {
+      LOG("DRIVE", "root:found", j.files[0].id);
+      return j.files[0].id;
+    }
 
-  renderTree();
-  restoreLastFile();
-}
+    LOG("DRIVE", "root:create");
+
+    const c = await gfetch(
+      "https://www.googleapis.com/drive/v3/files",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "SecureText",
+          mimeType: "application/vnd.google-apps.folder"
+        })
+      }
+    );
+
+    const created = await c.json();
+    LOG("DRIVE", "root:created", created.id);
+    return created.id;
+  }
+
+  /* ===================== LIST ===================== */
+
+  async function listChildren(parentId) {
+    LOG("DRIVE", "list", parentId);
+
+    const q = encodeURIComponent(
+      `'${parentId}' in parents and trashed=false`
+    );
+
+    const r = await gfetch(
+      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType)`
+    );
+
+    const j = await r.json();
+    return j.files;
+  }
+
+  /* ===================== CREATE ===================== */
+
+  async function createFolder(name, parentId) {
+    LOG("DRIVE", "folder:create", name);
+
+    const r = await gfetch(
+      "https://www.googleapis.com/drive/v3/files",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          parents: [parentId],
+          mimeType: "application/vnd.google-apps.folder"
+        })
+      }
+    );
+
+    return r.json();
+  }
+
+  async function createFile(name, parentId) {
+    LOG("DRIVE", "file:create", name);
+
+    const r = await gfetch(
+      "https://www.googleapis.com/drive/v3/files",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          parents: [parentId],
+          mimeType: "application/octet-stream"
+        })
+      }
+    );
+
+    return r.json();
+  }
+
+  /* ===================== RENAME ===================== */
+
+  async function rename(id, name) {
+    LOG("DRIVE", "rename", { id, name });
+
+    await gfetch(
+      `https://www.googleapis.com/drive/v3/files/${id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      }
+    );
+  }
+
+  /* ===================== DELETE (TRASH ONLY) ===================== */
+
+  async function trash(id) {
+    LOG("DRIVE", "trash", id);
+
+    await gfetch(
+      `https://www.googleapis.com/drive/v3/files/${id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trashed: true })
+      }
+    );
+  }
+
+  /* ===================== CONNECT FLOW ===================== */
+
+  async function connectDrive(password) {
+    LOG("DRIVE", "connect:start");
+
+    await auth();
+    const email = await fetchProfile();
+
+    if (!core.isAdmin()) {
+      core.setAdmin(email);
+      await core.saveVault(password);
+    }
+
+    const rootId = await ensureRoot();
+    core.setDriveRoot(rootId);
+    await core.saveVault(password);
+
+    LOG("DRIVE", "connect:done");
+  }
+
+  /* ===================== EXPORT ===================== */
+
+  window.drive = {
+    connect: connectDrive,
+    listChildren,
+    createFolder,
+    createFile,
+    rename,
+    trash
+  };
+})();

@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <title>SecureText</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -25,7 +24,7 @@
 </div>
 
 <!-- ADMIN MODAL -->
-<div id="adminModal" class="adminBox hidden">
+<div id="adminModal" class="adminOverlay hidden">
   <div class="adminContent">
     <h3>Admin</h3>
 
@@ -45,8 +44,9 @@
     <button id="closeAdminBtn">Close</button>
   </div>
 </div>
+
 <!-- CHANGE PASSWORD MODAL -->
-<div id="changePwdModal" class="adminBox hidden">
+<div id="changePwdModal" class="overlay hidden" style="display:none">
   <div class="adminContent">
     <h3>Change Password</h3>
     <input id="oldPwd" type="password" placeholder="Current password" />
@@ -57,20 +57,21 @@
   </div>
 </div>
 
-
 <!-- APP -->
 <div id="app" class="hidden">
 
   <!-- EXPLORER -->
   <aside id="explorer">
     <div class="explorer-header">
-      <span>Files</span>
+      <span class="root-label">SecureText</span>
       <div class="explorer-actions">
         <button id="newFolderBtn">＋📁</button>
         <button id="newFileBtn">＋📄</button>
       </div>
     </div>
-    <div id="tree"></div>
+
+    <!-- TREE (ROOT LOCKED) -->
+    <div id="tree" data-root="true"></div>
   </aside>
 
   <!-- MAIN -->
@@ -111,7 +112,7 @@
 <!-- GOOGLE IDENTITY -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<!-- APP SCRIPTS DO NOT REORDER THIS-->
+<!-- SCRIPT ORDER (DO NOT CHANGE) -->
 <script src="js/core.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/drive.js"></script>

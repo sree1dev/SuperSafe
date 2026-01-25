@@ -1,89 +1,17 @@
-* {
-  box-sizing: border-box;
-}
+/* ================= GLOBAL ================= */
+
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: #000;
+  background: #0b0b0b;
   color: #e6e6e6;
   font-family: system-ui, sans-serif;
 }
-.adminBox .adminBox {
-  display: none !important;
-}
 
+.hidden { display: none !important; }
 
-.hidden {
-  display: none;
-}
-
-/* ================= LOCK / MODALS ================= */
-
-#lockScreen,
-.adminOverlay {
-  position: fixed;
-  inset: 0;
-  background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-.adminContent {
-  background: #111;
-  padding: 24px;
-  width: 360px;
-  border-radius: 8px;
-}
-
-
-.lockBox,
-.adminBox {
-  background: #111;
-  padding: 24px;
-  width: 320px;
-  border-radius: 6px;
-  text-align: center;
-}
-
-.adminBox {
-  width: 360px;
-}
-
-.lockBox input,
-.adminBox input {
-  width: 100%;
-  padding: 10px;
-  margin-top: 10px;
-  background: #000;
-  border: 1px solid #333;
-  color: #fff;
-}
-
-.lockBox button,
-.adminBox button {
-  width: 100%;
-  margin-top: 12px;
-  padding: 8px;
-  background: #222;
-  border: none;
-  color: #fff;
-  cursor: pointer;
-}
-
-#lockError,
-#changeError {
-  margin-top: 8px;
-  color: #ff5555;
-  font-size: 13px;
-}
-
-.adminSection {
-  margin-top: 16px;
-  text-align: left;
-}
-
-/* ================= APP LAYOUT ================= */
+/* ================= LAYOUT ================= */
 
 #app {
   display: flex;
@@ -95,35 +23,72 @@ body {
 
 #explorer {
   width: 260px;
-  background: #0d0d0d;
+  background: #0f0f0f;
   border-right: 1px solid #222;
   overflow-y: auto;
-  flex-shrink: 0;
+  position: relative;
 }
 
 .explorer-header {
+  padding: 10px;
+  border-bottom: 1px solid #222;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
-  border-bottom: 1px solid #222;
 }
 
-.explorer-actions button {
-  margin-left: 6px;
+/* ================= TREE ================= */
+
+#tree {
+  padding: 8px 0;
+  position: relative;
 }
 
-.node {
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.node:hover {
+/* vertical spine */
+#tree::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
   background: #222;
 }
 
-.children {
-  padding-left: 14px;
+.tree-row {
+  position: relative;
+  padding-left: 36px;
+  margin: 4px 0;
+}
+
+/* horizontal connector */
+.tree-row::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  width: 20px;
+  height: 3px;
+  background: var(--line-color, #555);
+}
+
+/* vertical connector continuation */
+.tree-children {
+  margin-left: 16px;
+  border-left: 3px solid var(--line-color, #555);
+  padding-left: 8px;
+}
+
+.tree-label {
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.tree-label:hover {
+  background: rgba(255,255,255,0.08);
 }
 
 /* ================= MAIN ================= */
@@ -138,29 +103,66 @@ body {
 
 #toolbar {
   display: flex;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   background: #111;
   border-bottom: 1px solid #222;
-  align-items: center;
 }
 
-#toolbar button.active {
-  color: #00ff88;
+#toolbar button {
+  background: #1b1b1b;
+  color: #eee;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
 }
 
-.spacer {
-  flex: 1;
+#toolbar button:hover {
+  background: #2a2a2a;
 }
+
+.spacer { flex: 1; }
 
 /* ================= EDITOR ================= */
 
 #editor {
   flex: 1;
-  padding: 20px;
+  padding: 16px;
   outline: none;
-  line-height: 1.6;
   overflow-y: auto;
+  line-height: 1.6;
+  background: #000;
+}
+
+/* ================= MODALS ================= */
+
+.adminOverlay,
+.adminBox,
+#lockScreen {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.adminContent,
+.lockBox {
+  background: #111;
+  padding: 20px;
+  width: 320px;
+  border-radius: 6px;
+}
+
+input {
+  width: 100%;
+  padding: 8px;
+  background: #000;
+  border: 1px solid #333;
+  color: #fff;
+  margin-top: 8px;
 }
 
 /* ================= MOBILE ================= */
@@ -168,19 +170,15 @@ body {
 @media (max-width: 768px) {
   #explorer {
     position: fixed;
+    left: 0;
     top: 0;
     bottom: 0;
-    left: 0;
     transform: translateX(-100%);
-    transition: transform 0.2s ease;
+    transition: transform .25s;
     z-index: 20;
   }
 
   #explorer.open {
     transform: translateX(0);
   }
-}
-
-#changePwdModal.hidden {
-  display: none !important;
 }

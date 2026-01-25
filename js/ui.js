@@ -1,223 +1,251 @@
 "use strict";
-lockScreen.classList.remove("hidden");
-app.classList.add("hidden");
-adminModal.classList.add("hidden");
-changePwdModal.classList.add("hidden");
+
+/* =========================================================
+   UI — DRIVE MIRROR TREE + MODALS (STABLE)
+========================================================= */
+
+/* ===================== GLOBALS ===================== */
+
+let els = {};
+let readOnly = true;
+
+const folderColors = new Map();
+let colorIndex = 0;
+
+const COLORS = [
+  "#4FC3F7", "#81C784", "#FFB74D",
+  "#BA68C8", "#E57373", "#64B5F6",
+  "#AED581", "#FFD54F"
+];
+
+/* ===================== BOOT ===================== */
+
 document.addEventListener("DOMContentLoaded", () => {
+  LOG("UI", "boot:start");
+  cache();
+  resetUI();
+  wireLock();
+  wireExplorer();
+  wireToolbar();
+  wireAdmin();
+  focusPassword();
+  LOG("UI", "boot:ready");
+});
 
-(function domSanityGuard() {
-  const ids = {};
-  document.querySelectorAll("[id]").forEach(el => {
-    if (ids[el.id]) {
-      console.error("DUPLICATE ID:", el.id, el);
-      alert("Fatal DOM error: duplicate id → " + el.id);
-    }
-    ids[el.id] = true;
-  });
-})();
+/* ===================== CACHE ===================== */
 
-  
-  /* ================= ELEMENTS ================= */
+function cache() {
+  [
+    "lockScreen","passwordInput","lockError","app",
+    "explorer","tree","editor","adminModal",
+    "changePwdModal","openChangePwdBtn",
+    "closeAdminBtn","connectDriveBtn",
+    "uploadVaultBtn","downloadVaultBtn",
+    "adminBtn","logoutBtn","newFolderBtn",
+    "newFileBtn","toggleExplorerBtn"
+  ].forEach(id => els[id] = document.getElementById(id));
 
-  const lockScreen = document.getElementById("lockScreen");
-  const app = document.getElementById("app");
-  const passwordInput = document.getElementById("passwordInput");
-  const lockError = document.getElementById("lockError");
+  LOG("UI", "dom:cached");
+}
 
-  const editor = document.getElementById("editor");
-  const explorer = document.getElementById("explorer");
-  const treeRoot = document.getElementById("tree");
+/* ===================== RESET ===================== */
 
-  const toggleExplorerBtn = document.getElementById("toggleExplorerBtn");
-  const newFileBtn = document.getElementById("newFileBtn");
-  const newFolderBtn = document.getElementById("newFolderBtn");
+function resetUI() {
+  els.lockScreen.classList.remove("hidden");
+  els.app.classList.add("hidden");
+  els.adminModal.classList.add("hidden");
+  els.changePwdModal.classList.add("hidden");
+  LOG("UI", "state:reset");
+}
 
-  const encryptBtn = document.getElementById("encryptBtn");
-  const adminBtn = document.getElementById("adminBtn");
-  const logoutBtn = document.getElementById("logoutBtn");
+function focusPassword() {
+  els.passwordInput.focus();
+  LOG("UI", "focus:password");
+}
 
-  /* ADMIN */
+/* ===================== LOCK ===================== */
 
-  const adminModal = document.getElementById("adminModal");
-  const closeAdminBtn = document.getElementById("closeAdminBtn");
-  const driveStatus = document.getElementById("driveStatus");
-  const connectDriveBtn = document.getElementById("connectDriveBtn");
-  const uploadVaultBtn = document.getElementById("uploadVaultBtn");
-  const downloadVaultBtn = document.getElementById("downloadVaultBtn");
-  const openChangePwdBtn = document.getElementById("openChangePwdBtn");
+function wireLock() {
+  els.passwordInput.addEventListener("input", async () => {
+    const pwd = els.passwordInput.value.trim();
+    if (!pwd) return;
 
-  const changePwdModal = document.getElementById("changePwdModal");
-  const oldPwd = document.getElementById("oldPwd");
-  const newPwd = document.getElementById("newPwd");
-  const newPwd2 = document.getElementById("newPwd2");
-  const changeError = document.getElementById("changeError");
-  const changePwdConfirmBtn = document.getElementById("changePwdConfirmBtn");
-
-  const colorPicker = document.getElementById("colorPicker");
-    /* 🔒 FORCE INITIAL STATE */
-  adminModal.classList.add("hidden");
-  changePwdModal.classList.add("hidden");
-
-  console.log("UI ready, modals hidden");
-
-  /* ================= UNLOCK ================= */
-
-  passwordInput.oninput = async () => {
-    if (passwordInput.value.length < MASTER_PASSWORD.length) return;
+    LOG("UI", "unlock:attempt");
 
     try {
-      await unlockVaultFlow(passwordInput.value);
-      lockScreen.remove();
-      app.classList.remove("hidden");
-    } catch {
-      lockError.textContent = "Wrong password";
+      await core.unlockVault(pwd);
+
+      readOnly = !APP_STATE.admin.initialized;
+
+      els.lockScreen.classList.add("hidden");
+      els.app.classList.remove("hidden");
+
+      await renderExplorer();
+
+      LOG("UI", "unlock:success", { readOnly });
+    } catch (e) {
+      els.lockError.textContent = "Wrong password";
+      LOG("UI", "unlock:fail", e.message);
     }
-  };
-
-  /* ================= EXPLORER ================= */
-
-  toggleExplorerBtn.onclick = () =>
-    explorer.classList.toggle("open");
-
-  newFolderBtn.onclick = () => {
-    const name = prompt("Folder name");
-    if (name) createFolder(name);
-  };
-
-  newFileBtn.onclick = () => {
-    const name = prompt("File name");
-    if (name) createFile(name);
-  };
-
-  /* ================= TOOLBAR ================= */
-
-  document.querySelectorAll("[data-cmd]").forEach(btn => {
-    btn.onclick = () => {
-      document.execCommand(btn.dataset.cmd);
-      updateActive();
-    };
   });
+}
 
-  document.getElementById("bulletBtn").onclick = () => {
-    document.execCommand("insertUnorderedList");
-    updateActive();
+/* ===================== EXPLORER ===================== */
+
+function wireExplorer() {
+  els.newFolderBtn.onclick = async () => {
+    const name = prompt("Folder name");
+    if (!name) return;
+
+    LOG("UI", "folder:create", name);
+    await drive.createFolder(name, core.driveRoot());
+    await renderExplorer();
   };
 
-  document.getElementById("numberBtn").onclick = () => {
-    document.execCommand("insertOrderedList");
-    updateActive();
+  els.newFileBtn.onclick = async () => {
+    const name = prompt("File name");
+    if (!name) return;
+
+    LOG("UI", "file:create", name);
+    await drive.createFile(name, core.driveRoot());
+    await renderExplorer();
   };
 
-  document.getElementById("undoBtn").onclick =
-    () => document.execCommand("undo");
+  els.toggleExplorerBtn.onclick =
+    () => els.explorer.classList.toggle("open");
+}
 
-  document.getElementById("redoBtn").onclick =
-    () => document.execCommand("redo");
+async function renderExplorer() {
+  els.tree.innerHTML = "";
+  folderColors.clear();
+  colorIndex = 0;
 
-  colorPicker.oninput = () =>
-    document.execCommand("foreColor", false, colorPicker.value);
+  const rootId = core.driveRoot();
+  if (!rootId) return;
 
-  function updateActive() {
-    document.querySelectorAll(".fmt").forEach(btn =>
-      btn.classList.toggle(
-        "active",
-        document.queryCommandState(btn.dataset.cmd)
-      )
+  const root = {
+    id: rootId,
+    name: "Root",
+    mimeType: "application/vnd.google-apps.folder"
+  };
+
+  await renderNode(root, els.tree, null);
+  LOG("UI", "explorer:render");
+}
+
+async function renderNode(node, container, parentColor) {
+  const color = getColor(node, parentColor);
+
+  const row = document.createElement("div");
+  row.className = "tree-row";
+  row.style.setProperty("--line-color", color);
+
+  const label = document.createElement("div");
+  label.className = "tree-label";
+  label.textContent = node.name;
+  label.style.color = color;
+
+  row.appendChild(label);
+  container.appendChild(row);
+
+  attachDelete(label, node.id);
+
+  if (node.mimeType !== "application/vnd.google-apps.folder") {
+    label.onclick = () => LOG("UI", "file:select", node.name);
+    return;
+  }
+
+  const childrenBox = document.createElement("div");
+  childrenBox.className = "tree-children";
+  container.appendChild(childrenBox);
+
+  label.onclick = () => childrenBox.classList.toggle("hidden");
+
+  const kids = await drive.listChildren(node.id);
+  for (const child of kids) {
+    await renderNode(child, childrenBox, color);
+  }
+}
+
+/* ===================== COLORS ===================== */
+
+function getColor(node, parentColor) {
+  if (node.mimeType !== "application/vnd.google-apps.folder") {
+    return parentColor || "#aaa";
+  }
+
+  if (!folderColors.has(node.id)) {
+    folderColors.set(
+      node.id,
+      COLORS[colorIndex++ % COLORS.length]
     );
   }
+  return folderColors.get(node.id);
+}
 
-  /* ================= LOCAL SAVE ================= */
+/* ===================== DELETE ===================== */
 
-  encryptBtn.onclick = async () => {
-    await saveLocal();
-  };
+function attachDelete(el, id) {
+  el.oncontextmenu = async e => {
+    e.preventDefault();
+    LOG("UI", "delete:attempt", id);
 
-  editor.addEventListener("input", () => {
-    if (!currentNode) return;
-    currentNode.content = editor.innerHTML;
-    vaultData.updatedAt = Date.now();
-  });
+    const pwd = prompt("Admin password to delete");
+    if (!pwd) return;
 
-  /* ================= ADMIN ================= */
-
-  adminBtn.onclick = () => {
-    adminModal.classList.remove("hidden");
-    refreshAdminUI();
-  };
-
-  closeAdminBtn.onclick = () =>
-    adminModal.classList.add("hidden");
-
-  openChangePwdBtn.onclick = () => {
-    adminModal.classList.add("hidden");
-    changePwdModal.classList.remove("hidden");
-  };
-
-  changePwdConfirmBtn.onclick = async () => {
-    if (!vaultData.admin.initialized) {
-      alert("Only admin can change password");
-      return;
-    }
-
-    if (oldPwd.value !== MASTER_PASSWORD) {
-      changeError.textContent = "Wrong password";
-      return;
-    }
-
-    if (!newPwd.value || newPwd.value !== newPwd2.value) {
-      changeError.textContent = "Passwords do not match";
-      return;
-    }
-
-    MASTER_PASSWORD = newPwd.value;
-
-    const encrypted = await encryptVault(MASTER_PASSWORD, vaultData);
-    dbPut("vault", encrypted);
-
-    await saveVaultRemote();
-
-    oldPwd.value = newPwd.value = newPwd2.value = "";
-    changeError.textContent = "";
-    changePwdModal.classList.add("hidden");
-
-    alert("Vault re-encrypted");
-  };
-
-  /* ================= DRIVE ================= */
-
-  connectDriveBtn.onclick = async () => {
     try {
-      await connectDriveAsAdmin();
-      refreshAdminUI();
+      await core.verifyAdmin(pwd);
+      await drive.trash(id);
+      await renderExplorer();
+      LOG("UI", "delete:trashed", id);
     } catch {
-      alert("Google authentication failed");
+      LOG("UI", "delete:denied");
     }
   };
+}
 
-  uploadVaultBtn.onclick = async () => {
-    await saveVaultRemote();
-    alert("Vault uploaded");
+/* ===================== TOOLBAR ===================== */
+
+function wireLock() {
+  els.passwordInput.addEventListener("keydown", async e => {
+    if (e.key !== "Enter") return;
+
+    const pwd = els.passwordInput.value.trim();
+    if (!pwd) return;
+
+    LOG("UI", "unlock:attempt");
+
+    try {
+      const ok = await core.unlockVault(pwd);
+      if (!ok) throw new Error("wrong-password");
+
+      readOnly = !APP_STATE.admin.initialized;
+
+      els.lockScreen.classList.add("hidden");
+      els.app.classList.remove("hidden");
+
+      await renderExplorer();
+
+      LOG("UI", "unlock:success", { readOnly });
+    } catch (err) {
+      els.lockError.textContent = "Wrong password";
+      LOG("UI", "unlock:fail", err.message);
+    }
+  });
+}
+
+/* ===================== ADMIN ===================== */
+
+function wireAdmin() {
+  els.openChangePwdBtn.onclick = () => {
+    els.adminModal.classList.add("hidden");
+    els.changePwdModal.classList.remove("hidden");
+    LOG("UI", "password:change-open");
   };
 
-  downloadVaultBtn.onclick = async () => {
-    await loadVaultRemote();
-    alert("Vault downloaded");
+  els.connectDriveBtn.onclick = async () => {
+    LOG("UI", "drive:connect-click");
+    await drive.connect(els.passwordInput.value);
+    await renderExplorer();
   };
-
-  function refreshAdminUI() {
-    const ok = vaultData.admin.initialized;
-
-    driveStatus.textContent = ok
-      ? `Locked to ${vaultData.admin.googleEmail}`
-      : "Not connected";
-
-    uploadVaultBtn.disabled = !ok;
-    downloadVaultBtn.disabled = !ok;
-    openChangePwdBtn.disabled = !ok;
-  }
-
-  /* ================= LOGOUT ================= */
-
-  logoutBtn.onclick = () => location.reload();
-
-});
+}
