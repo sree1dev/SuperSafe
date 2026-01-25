@@ -1,55 +1,36 @@
+ /*  core.js  */
 "use strict";
-
 /* =========================================================
-   CORE — STATE, CRYPTO, DB, LOGGING
-   (NO DOM ACCESS HERE)
+   CORE — AUTH, STATE, CRYPTO, DB
+   SINGLE SOURCE OF TRUTH (LOCKED)
 ========================================================= */
 
 (() => {
-  /* ===================== LOGGING ===================== */
+  /* ===================== LOG ===================== */
 
   const TS = () => new Date().toISOString();
-  window.LOG = (scope, action, data) => {
-    if (data !== undefined) {
-      console.log(`[${TS()}] [${scope}] ${action}`, data);
-    } else {
-      console.log(`[${TS()}] [${scope}] ${action}`);
-    }
+  window.LOG = (scope, msg, data) => {
+    console.log(
+      `[${TS()}] [${scope}] ${msg}`,
+      data !== undefined ? data : ""
+    );
   };
 
   LOG("CORE", "init");
 
-  /* ===================== STATE ===================== */
+  /* ===================== GLOBAL STATE ===================== */
 
-  window.APP_STATE = {
-    unlocked: false,
-
-    admin: {
-      initialized: false,
-      email: null
-    },
-
-    drive: {
-      connected: false,
-      rootId: null
-    },
-
-    currentFileId: null
-  };
   window.vaultData = null;
-  window.MASTER_PASSWORD = null;
+  window.readOnly = true;
 
+  let MASTER_PASSWORD = null;
+  let UNLOCKED = false;
 
-  /* ===================== CONFIG ===================== */
+  /* ===================== DB ===================== */
 
   const DB_NAME = "securetext";
   const STORE = "vault";
-  const AUTO_LOCK_MS = 60_000;
-
   let db = null;
-  let lockTimer = null;
-
-  /* ===================== DB ===================== */
 
   function openDB() {
     return new Promise(resolve => {
@@ -64,21 +45,22 @@
     });
   }
 
+  function dbGet(key) {
+    LOG("DB", "get", key);
+    return new Promise(resolve => {
+      const req = db
+        .transaction(STORE)
+        .objectStore(STORE)
+        .get(key);
+      req.onsuccess = () => resolve(req.result || null);
+    });
+  }
+
   function dbPut(key, val) {
     LOG("DB", "put", key);
     db.transaction(STORE, "readwrite")
       .objectStore(STORE)
       .put(val, key);
-  }
-
-  function dbGet(key) {
-    LOG("DB", "get", key);
-    return new Promise(resolve => {
-      const req = db.transaction(STORE)
-        .objectStore(STORE)
-        .get(key);
-      req.onsuccess = () => resolve(req.result || null);
-    });
   }
 
   /* ===================== CRYPTO ===================== */
@@ -87,7 +69,6 @@
   const dec = new TextDecoder();
 
   async function deriveKey(password) {
-    LOG("CRYPTO", "deriveKey:start");
     const base = await crypto.subtle.importKey(
       "raw",
       enc.encode(password),
@@ -95,10 +76,11 @@
       false,
       ["deriveKey"]
     );
-    const key = await crypto.subtle.deriveKey(
+
+    return crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
-        salt: enc.encode("securetext"),
+        salt: enc.encode("securetext-v1"),
         iterations: 150000,
         hash: "SHA-256"
       },
@@ -107,89 +89,135 @@
       false,
       ["encrypt", "decrypt"]
     );
-    LOG("CRYPTO", "deriveKey:done");
-    return key;
   }
 
   async function encrypt(password, obj) {
-    LOG("CRYPTO", "encrypt:start");
     const key = await deriveKey(password);
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const cipher = await crypto.subtle.encrypt(
+    const buf = await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
       key,
       enc.encode(JSON.stringify(obj))
     );
-    LOG("CRYPTO", "encrypt:done");
-    return { iv: [...iv], data: [...new Uint8Array(cipher)] };
+    return { iv: [...iv], data: [...new Uint8Array(buf)] };
   }
 
   async function decrypt(password, payload) {
-    LOG("CRYPTO", "decrypt:start");
     const key = await deriveKey(password);
-    const plain = await crypto.subtle.decrypt(
+    const buf = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: new Uint8Array(payload.iv) },
       key,
       new Uint8Array(payload.data)
     );
-    LOG("CRYPTO", "decrypt:done");
-    return JSON.parse(dec.decode(plain));
+    return JSON.parse(dec.decode(buf));
   }
 
   /* ===================== VAULT ===================== */
 
-  function defaultVault() {
+  function newVault() {
     return {
       admin: {
         initialized: false,
         email: null
       },
-      drive: {
-        rootId: null
-      },
-      updatedAt: Date.now()
+      createdAt: Date.now()
     };
   }
 
+  /**
+   * IMPORTANT:
+   * - This must be called ONLY by UI "Unlock" button
+   * - Never by input event
+   */
   async function unlockVault(password) {
     LOG("CORE", "unlock:start");
 
-    const cached = await dbGet("vault");
-
-    if (!cached || !cached.iv || !cached.data) {
-      LOG("CORE", "vault:reset");
-      window.vaultData = defaultVault();
-      MASTER_PASSWORD = password;
-      await saveVault(password);
-      return;
+    if (!password || password.length < 1) {
+      throw new Error("empty-password");
     }
 
+    const stored = await dbGet("vault");
+
+    // First run
+    if (!stored) {
+      LOG("CORE", "vault:first-run");
+
+      vaultData = newVault();
+      MASTER_PASSWORD = password;
+      UNLOCKED = true;
+      readOnly = false;
+
+      const encrypted = await encrypt(password, vaultData);
+      dbPut("vault", encrypted);
+
+      LOG("CORE", "unlock:success:first-run");
+      return true;
+    }
+
+    // Normal run
     try {
-      window.vaultData = await decrypt(password, cached);
+      vaultData = await decrypt(password, stored);
       MASTER_PASSWORD = password;
-      LOG("CORE", "unlock:success");
+      UNLOCKED = true;
+      readOnly = !vaultData.admin.initialized;
+
+      LOG("CORE", "unlock:success", { readOnly });
+      return true;
     } catch {
-      LOG("CORE", "vault:decrypt-failed -> reset");
-      window.vaultData = defaultVault();
-      MASTER_PASSWORD = password;
-      await saveVault(password);
+      LOG("CORE", "unlock:wrong-password");
+      throw new Error("wrong-password");
     }
   }
 
+  async function saveVault() {
+    if (!UNLOCKED || !MASTER_PASSWORD) {
+      throw new Error("vault-locked");
+    }
 
-  async function saveVault(password) {
-    const payload = {
-      admin: APP_STATE.admin,
-      drive: APP_STATE.drive,
-      updatedAt: Date.now()
-    };
-
-    const encrypted = await encrypt(password, payload);
+    const encrypted = await encrypt(MASTER_PASSWORD, vaultData);
     dbPut("vault", encrypted);
-    LOG("CORE", "save:local-complete");
+    LOG("CORE", "save:local");
+  }
+
+  /* ===================== ADMIN ===================== */
+
+  function isAdmin() {
+    return vaultData?.admin?.initialized === true;
+  }
+
+  async function verifyAdmin(password) {
+    if (!UNLOCKED || password !== MASTER_PASSWORD) {
+      LOG("CORE", "admin:verify-fail");
+      throw new Error("not-admin");
+    }
+    LOG("CORE", "admin:verify-ok");
+  }
+
+  function setAdmin(email) {
+    vaultData.admin.initialized = true;
+    vaultData.admin.email = email;
+    readOnly = false;
+    saveVault();
+    LOG("CORE", "admin:set", email);
+  }
+
+  /* ===================== DRIVE ===================== */
+
+  let DRIVE_ROOT = null;
+
+  function setDriveRoot(id) {
+    DRIVE_ROOT = id;
+    LOG("CORE", "drive:root-set", id);
+  }
+
+  function driveRoot() {
+    return DRIVE_ROOT;
   }
 
   /* ===================== AUTO LOCK ===================== */
+
+  const AUTO_LOCK_MS = 60_000;
+  let lockTimer = null;
 
   function resetAutoLock() {
     clearTimeout(lockTimer);
@@ -199,59 +227,23 @@
     }, AUTO_LOCK_MS);
   }
 
-  ["keydown","mousedown","mousemove","touchstart"].forEach(e =>
+  ["mousemove","keydown","mousedown","touchstart"].forEach(e =>
     document.addEventListener(e, resetAutoLock, true)
   );
 
-  /* ===================== ADMIN HELPERS ===================== */
-
-  function isAdmin() {
-    return APP_STATE.admin.initialized === true;
-  }
-
-  function setAdmin(email) {
-    APP_STATE.admin.initialized = true;
-    APP_STATE.admin.email = email;
-    LOG("CORE", "admin:set", email);
-  }
-
-  function setDriveRoot(id) {
-    APP_STATE.drive.connected = true;
-    APP_STATE.drive.rootId = id;
-    LOG("CORE", "drive:root-set", id);
-  }
-
-  /* ===================== EXPORTS ===================== */
+  /* ===================== EXPORT ===================== */
 
   window.core = {
-    openDB,
     unlockVault,
     saveVault,
-    encrypt,
-    decrypt,
     isAdmin,
+    verifyAdmin,
     setAdmin,
-    setDriveRoot
+    setDriveRoot,
+    driveRoot
   };
 
   /* ===================== INIT ===================== */
 
   openDB();
 })();
-
-/* ================= ADMIN VERIFY ================= */
-
-window.core.verifyAdmin = async function (password) {
-  if (password !== "test") {
-    LOG("CORE", "admin:verify-fail");
-    throw new Error("Not admin");
-  }
-  LOG("CORE", "admin:verify-ok");
-};
-
-/* ================= DRIVE ROOT GETTER ================= */
-
-window.core.driveRoot = function () {
-  return APP_STATE.drive.rootId;
-};
-

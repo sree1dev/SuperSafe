@@ -1,3 +1,4 @@
+<!--index.html-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,97 +10,87 @@
 
 <body>
 
-<!-- LOCK SCREEN -->
+<!-- ================= LOCK SCREEN ================= -->
 <div id="lockScreen">
   <div class="lockBox">
     <h2>SecureText</h2>
+
     <input
       id="passwordInput"
       type="password"
       placeholder="Vault password"
       autocomplete="off"
+      spellcheck="false"
     />
+
+    <button id="unlockBtn">Unlock</button>
+
     <div id="lockError"></div>
   </div>
 </div>
 
-<!-- ADMIN MODAL -->
-<div id="adminModal" class="adminOverlay hidden">
-  <div class="adminContent">
+<!-- ================= ADMIN MODAL ================= -->
+<div id="adminModal" class="modal hidden">
+  <div class="modalContent">
     <h3>Admin</h3>
 
-    <div class="adminSection">
+    <section>
       <strong>Google Drive</strong>
       <div id="driveStatus">Not connected</div>
       <button id="connectDriveBtn">Connect Drive</button>
-      <button id="uploadVaultBtn">Upload</button>
-      <button id="downloadVaultBtn">Download</button>
-    </div>
+    </section>
 
-    <div class="adminSection">
+    <section>
       <strong>Security</strong>
       <button id="openChangePwdBtn">Change Password</button>
-    </div>
+    </section>
 
     <button id="closeAdminBtn">Close</button>
   </div>
 </div>
 
-<!-- CHANGE PASSWORD MODAL -->
-<div id="changePwdModal" class="overlay hidden" style="display:none">
-  <div class="adminContent">
+<!-- ================= CHANGE PASSWORD MODAL ================= -->
+<div id="changePwdModal" class="modal hidden">
+  <div class="modalContent">
     <h3>Change Password</h3>
+
     <input id="oldPwd" type="password" placeholder="Current password" />
     <input id="newPwd" type="password" placeholder="New password" />
     <input id="newPwd2" type="password" placeholder="Confirm new password" />
+
     <div id="changeError"></div>
+
     <button id="changePwdConfirmBtn">Re-encrypt Vault</button>
+    <button id="closeChangePwdBtn">Cancel</button>
   </div>
 </div>
 
-<!-- APP -->
+<!-- ================= APP ================= -->
 <div id="app" class="hidden">
 
-  <!-- EXPLORER -->
+  <!-- ===== EXPLORER ===== -->
   <aside id="explorer">
-    <div class="explorer-header">
-      <span class="root-label">SecureText</span>
-      <div class="explorer-actions">
-        <button id="newFolderBtn">＋📁</button>
-        <button id="newFileBtn">＋📄</button>
+    <div class="explorerHeader">
+      <span class="rootLabel">SecureText</span>
+      <div class="explorerActions">
+        <button id="newFolderBtn">+ Folder</button>
+        <button id="newFileBtn">+ File</button>
       </div>
     </div>
 
-    <!-- TREE (ROOT LOCKED) -->
-    <div id="tree" data-root="true"></div>
+    <div id="tree"></div>
   </aside>
 
-  <!-- MAIN -->
+  <!-- ===== MAIN ===== -->
   <main id="main">
 
-    <!-- TOOLBAR -->
     <div id="toolbar">
       <button id="toggleExplorerBtn">☰</button>
-
-      <button id="undoBtn">⟲</button>
-      <button id="redoBtn">⟳</button>
-
-      <button class="fmt" data-cmd="bold">B</button>
-      <button class="fmt" data-cmd="italic">I</button>
-
-      <input type="color" id="colorPicker" />
-
-      <button id="bulletBtn">•</button>
-      <button id="numberBtn">1.</button>
-
       <span class="spacer"></span>
-
-      <button id="encryptBtn">Encrypt</button>
       <button id="adminBtn">Admin</button>
       <button id="logoutBtn">Logout</button>
     </div>
 
-    <!-- EDITOR -->
     <div
       id="editor"
       contenteditable="true"
@@ -109,13 +100,18 @@
   </main>
 </div>
 
-<!-- GOOGLE IDENTITY -->
+<!-- ================= GOOGLE IDENTITY ================= -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<!-- SCRIPT ORDER (DO NOT CHANGE) -->
+<!-- ================= APP SCRIPTS (ORDER MATTERS) ================= -->
+ <script>
+  window.GOOGLE_CLIENT_ID = "628807779499-ql68bc363klkaiuesakd1eknc38qmcah.apps.googleusercontent.com";
+</script>
+
+
 <script src="js/core.js"></script>
-<script src="js/ui.js"></script>
 <script src="js/drive.js"></script>
+<script src="js/ui.js"></script>
 
 </body>
 </html>

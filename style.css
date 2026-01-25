@@ -1,97 +1,185 @@
-/* ================= GLOBAL ================= */
+/*style.css*/
+/* =========================================================
+   GLOBAL
+========================================================= */
+* {
+  box-sizing: border-box;
+}
 
-* { box-sizing: border-box; }
+:root {
+  --bg: #0e0e0e;
+  --panel: #141414;
+  --border: #222;
+  --text: #e6e6e6;
+  --muted: #888;
+  --accent: #4fc3f7;
+}
 
 body {
   margin: 0;
-  background: #0b0b0b;
-  color: #e6e6e6;
-  font-family: system-ui, sans-serif;
-}
-
-.hidden { display: none !important; }
-
-/* ================= LAYOUT ================= */
-
-#app {
-  display: flex;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   height: 100vh;
   overflow: hidden;
 }
 
-/* ================= EXPLORER ================= */
+.hidden {
+  display: none !important;
+}
+
+/* =========================================================
+   LOCK SCREEN
+========================================================= */
+
+#lockScreen {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.lockBox {
+  background: #111;
+  width: 320px;
+  padding: 24px;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.lockBox h2 {
+  margin: 0 0 16px;
+}
+
+.lockBox input {
+  width: 100%;
+  padding: 10px;
+  background: #000;
+  border: 1px solid #333;
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.lockBox button {
+  width: 100%;
+  padding: 10px;
+  background: #1f1f1f;
+  border: 1px solid #333;
+  color: #fff;
+  cursor: pointer;
+}
+
+#lockError {
+  margin-top: 10px;
+  color: #ff6b6b;
+  font-size: 13px;
+}
+
+/* =========================================================
+   APP LAYOUT
+========================================================= */
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+/* =========================================================
+   EXPLORER
+========================================================= */
 
 #explorer {
   width: 260px;
-  background: #0f0f0f;
-  border-right: 1px solid #222;
-  overflow-y: auto;
-  position: relative;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
 }
 
-.explorer-header {
+.explorerHeader {
   padding: 10px;
-  border-bottom: 1px solid #222;
+  border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-/* ================= TREE ================= */
+.rootLabel {
+  font-weight: 600;
+}
+
+.explorerActions button {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+/* =========================================================
+   TREE (VS CODE STYLE)
+========================================================= */
 
 #tree {
-  padding: 8px 0;
-  position: relative;
+  padding: 8px 0 12px 0;
+  overflow-y: auto;
+  font-size: 13px;
 }
 
-/* vertical spine */
-#tree::before {
-  content: "";
-  position: absolute;
-  left: 16px;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: #222;
-}
-
+/* Row */
 .tree-row {
   position: relative;
-  padding-left: 36px;
-  margin: 4px 0;
+  padding-left: 28px;
+  margin: 2px 0;
 }
 
-/* horizontal connector */
+/* Vertical thread */
 .tree-row::before {
   content: "";
   position: absolute;
-  left: 16px;
+  left: 14px;
+  top: -12px;
+  bottom: -12px;
+  width: 3px;
+  background: var(--line-color, #444);
+}
+
+/* Horizontal connector */
+.tree-row::after {
+  content: "";
+  position: absolute;
+  left: 14px;
   top: 50%;
-  width: 20px;
+  width: 12px;
   height: 3px;
-  background: var(--line-color, #555);
+  background: var(--line-color, #444);
 }
 
-/* vertical connector continuation */
-.tree-children {
-  margin-left: 16px;
-  border-left: 3px solid var(--line-color, #555);
-  padding-left: 8px;
-}
-
+/* Label */
 .tree-label {
   cursor: pointer;
-  font-size: 14px;
-  padding: 4px 6px;
+  padding: 3px 6px;
   border-radius: 4px;
-  user-select: none;
+  display: inline-block;
 }
 
 .tree-label:hover {
-  background: rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.06);
 }
 
-/* ================= MAIN ================= */
+/* Children container */
+.tree-children {
+  margin-left: 14px;
+}
+
+/* =========================================================
+   MAIN / EDITOR
+========================================================= */
 
 #main {
   flex: 1;
@@ -99,83 +187,91 @@ body {
   flex-direction: column;
 }
 
-/* ================= TOOLBAR ================= */
-
 #toolbar {
   display: flex;
-  gap: 6px;
-  padding: 8px;
-  background: #111;
-  border-bottom: 1px solid #222;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
 }
 
 #toolbar button {
-  background: #1b1b1b;
-  color: #eee;
-  border: none;
-  padding: 6px 8px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
   cursor: pointer;
 }
 
-#toolbar button:hover {
-  background: #2a2a2a;
+.spacer {
+  flex: 1;
 }
-
-.spacer { flex: 1; }
-
-/* ================= EDITOR ================= */
 
 #editor {
   flex: 1;
-  padding: 16px;
+  padding: 20px;
   outline: none;
   overflow-y: auto;
   line-height: 1.6;
-  background: #000;
 }
 
-/* ================= MODALS ================= */
+/* =========================================================
+   MODALS
+========================================================= */
 
-.adminOverlay,
-.adminBox,
-#lockScreen {
+.modal {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0,0,0,0.75);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 900;
 }
 
-.adminContent,
-.lockBox {
+.modalContent {
   background: #111;
+  width: 360px;
   padding: 20px;
-  width: 320px;
-  border-radius: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
-input {
+.modalContent h3 {
+  margin-top: 0;
+}
+
+.modalContent input {
   width: 100%;
+  margin: 6px 0;
   padding: 8px;
   background: #000;
   border: 1px solid #333;
   color: #fff;
-  margin-top: 8px;
 }
 
-/* ================= MOBILE ================= */
+.modalContent button {
+  margin-top: 10px;
+  width: 100%;
+  padding: 8px;
+  background: #1f1f1f;
+  border: 1px solid #333;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* =========================================================
+   MOBILE
+========================================================= */
 
 @media (max-width: 768px) {
   #explorer {
     position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
+    inset: 0 auto 0 0;
     transform: translateX(-100%);
     transition: transform .25s;
-    z-index: 20;
+    z-index: 500;
   }
 
   #explorer.open {

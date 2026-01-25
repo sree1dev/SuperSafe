@@ -1,92 +1,105 @@
+/*  ui.js  */
 "use strict";
-
 /* =========================================================
-   UI — DRIVE MIRROR TREE + MODALS (STABLE)
+   UI — DRIVE-SYNCED, AUTO-REFRESHING
 ========================================================= */
 
-/* ===================== GLOBALS ===================== */
+document.addEventListener("DOMContentLoaded", bootUI);
+
+/* ===================== STATE ===================== */
 
 let els = {};
 let readOnly = true;
-
-const folderColors = new Map();
-let colorIndex = 0;
-
-const COLORS = [
-  "#4FC3F7", "#81C784", "#FFB74D",
-  "#BA68C8", "#E57373", "#64B5F6",
-  "#AED581", "#FFD54F"
-];
+let selectedFolderId = null;
 
 /* ===================== BOOT ===================== */
 
-document.addEventListener("DOMContentLoaded", () => {
-  LOG("UI", "boot:start");
-  cache();
-  resetUI();
+function bootUI() {
+  cacheElements();
+  resetInitialState();
   wireLock();
   wireExplorer();
   wireToolbar();
   wireAdmin();
+
+  // 🔁 auto refresh when Drive polling fires
+  document.addEventListener("drive-refresh", async () => {
+    if (drive.isReady()) {
+      await renderExplorer();
+    }
+  });
+
   focusPassword();
-  LOG("UI", "boot:ready");
-});
+}
 
 /* ===================== CACHE ===================== */
 
-function cache() {
-  [
-    "lockScreen","passwordInput","lockError","app",
-    "explorer","tree","editor","adminModal",
-    "changePwdModal","openChangePwdBtn",
-    "closeAdminBtn","connectDriveBtn",
-    "uploadVaultBtn","downloadVaultBtn",
-    "adminBtn","logoutBtn","newFolderBtn",
-    "newFileBtn","toggleExplorerBtn"
-  ].forEach(id => els[id] = document.getElementById(id));
-
-  LOG("UI", "dom:cached");
+function cacheElements() {
+  const ids = [
+    "lockScreen","passwordInput","unlockBtn","lockError",
+    "app","explorer","tree","editor",
+    "adminModal","changePwdModal",
+    "adminBtn","logoutBtn",
+    "newFolderBtn","newFileBtn","toggleExplorerBtn",
+    "connectDriveBtn","openChangePwdBtn",
+    "closeAdminBtn","closeChangePwdBtn",
+    "oldPwd","newPwd","newPwd2","changePwdConfirmBtn","changeError"
+  ];
+  ids.forEach(id => els[id] = document.getElementById(id));
 }
 
-/* ===================== RESET ===================== */
+/* ===================== INITIAL ===================== */
 
-function resetUI() {
+function resetInitialState() {
   els.lockScreen.classList.remove("hidden");
   els.app.classList.add("hidden");
   els.adminModal.classList.add("hidden");
   els.changePwdModal.classList.add("hidden");
-  LOG("UI", "state:reset");
+  els.lockError.textContent = "";
 }
 
 function focusPassword() {
   els.passwordInput.focus();
-  LOG("UI", "focus:password");
+  els.passwordInput.value = "";
 }
 
-/* ===================== LOCK ===================== */
+/* ===================== LOCK / UNLOCK ===================== */
 
 function wireLock() {
-  els.passwordInput.addEventListener("input", async () => {
+  els.unlockBtn.onclick = async () => {
     const pwd = els.passwordInput.value.trim();
-    if (!pwd) return;
-
-    LOG("UI", "unlock:attempt");
+    if (!pwd) {
+      els.lockError.textContent = "Enter password";
+      return;
+    }
 
     try {
       await core.unlockVault(pwd);
 
-      readOnly = !APP_STATE.admin.initialized;
-
       els.lockScreen.classList.add("hidden");
       els.app.classList.remove("hidden");
+      readOnly = !core.isAdmin();
+
+      // silent reconnect
+      await drive.trySilentConnect();
+
+      // wait until Drive is actually ready
+      await waitForDrive();
 
       await renderExplorer();
-
-      LOG("UI", "unlock:success", { readOnly });
-    } catch (e) {
+    } catch {
       els.lockError.textContent = "Wrong password";
-      LOG("UI", "unlock:fail", e.message);
     }
+  };
+}
+
+function waitForDrive() {
+  return new Promise(resolve => {
+    const check = () => {
+      if (drive.isReady()) return resolve();
+      setTimeout(check, 200);
+    };
+    check();
   });
 }
 
@@ -96,18 +109,14 @@ function wireExplorer() {
   els.newFolderBtn.onclick = async () => {
     const name = prompt("Folder name");
     if (!name) return;
-
-    LOG("UI", "folder:create", name);
-    await drive.createFolder(name, core.driveRoot());
+    await drive.createFolder(name, selectedFolderId || core.driveRoot());
     await renderExplorer();
   };
 
   els.newFileBtn.onclick = async () => {
     const name = prompt("File name");
     if (!name) return;
-
-    LOG("UI", "file:create", name);
-    await drive.createFile(name, core.driveRoot());
+    await drive.createFile(name, selectedFolderId || core.driveRoot());
     await renderExplorer();
   };
 
@@ -117,24 +126,22 @@ function wireExplorer() {
 
 async function renderExplorer() {
   els.tree.innerHTML = "";
-  folderColors.clear();
-  colorIndex = 0;
+  selectedFolderId = null;
 
   const rootId = core.driveRoot();
-  if (!rootId) return;
+  if (!rootId || !drive.isReady()) return;
 
   const root = {
     id: rootId,
-    name: "Root",
+    name: "SecureText",
     mimeType: "application/vnd.google-apps.folder"
   };
 
   await renderNode(root, els.tree, null);
-  LOG("UI", "explorer:render");
 }
 
 async function renderNode(node, container, parentColor) {
-  const color = getColor(node, parentColor);
+  const color = drive.getColor(node.id, parentColor);
 
   const row = document.createElement("div");
   row.className = "tree-row";
@@ -148,104 +155,106 @@ async function renderNode(node, container, parentColor) {
   row.appendChild(label);
   container.appendChild(row);
 
-  attachDelete(label, node.id);
-
-  if (node.mimeType !== "application/vnd.google-apps.folder") {
-    label.onclick = () => LOG("UI", "file:select", node.name);
+  if (!drive.isFolder(node)) {
+    attachContextMenu(label, node);
     return;
   }
+
+  label.onclick = () => {
+    selectedFolderId = node.id;
+  };
 
   const childrenBox = document.createElement("div");
   childrenBox.className = "tree-children";
   container.appendChild(childrenBox);
 
-  label.onclick = () => childrenBox.classList.toggle("hidden");
-
-  const kids = await drive.listChildren(node.id);
-  for (const child of kids) {
+  const children = await drive.listChildren(node.id);
+  for (const child of children) {
     await renderNode(child, childrenBox, color);
   }
+
+  attachContextMenu(label, node);
 }
 
-/* ===================== COLORS ===================== */
+/* ===================== CONTEXT MENU ===================== */
 
-function getColor(node, parentColor) {
-  if (node.mimeType !== "application/vnd.google-apps.folder") {
-    return parentColor || "#aaa";
-  }
-
-  if (!folderColors.has(node.id)) {
-    folderColors.set(
-      node.id,
-      COLORS[colorIndex++ % COLORS.length]
-    );
-  }
-  return folderColors.get(node.id);
-}
-
-/* ===================== DELETE ===================== */
-
-function attachDelete(el, id) {
+function attachContextMenu(el, node) {
   el.oncontextmenu = async e => {
     e.preventDefault();
-    LOG("UI", "delete:attempt", id);
+    const action = prompt("rename / delete ?");
+    if (!action) return;
 
-    const pwd = prompt("Admin password to delete");
-    if (!pwd) return;
+    if (!core.isAdmin()) {
+      alert("Admin only");
+      return;
+    }
 
-    try {
-      await core.verifyAdmin(pwd);
-      await drive.trash(id);
+    if (action === "delete") {
+      const pwd = prompt("Admin password");
+      try {
+        await core.verifyAdmin(pwd);
+        await drive.trash(node.id);
+        await renderExplorer();
+      } catch {}
+    }
+
+    if (action === "rename") {
+      const name = prompt("New name");
+      if (!name) return;
+      await drive.rename(node.id, name);
       await renderExplorer();
-      LOG("UI", "delete:trashed", id);
-    } catch {
-      LOG("UI", "delete:denied");
     }
   };
 }
 
 /* ===================== TOOLBAR ===================== */
 
-function wireLock() {
-  els.passwordInput.addEventListener("keydown", async e => {
-    if (e.key !== "Enter") return;
+function wireToolbar() {
+  els.adminBtn.onclick =
+    () => els.adminModal.classList.remove("hidden");
 
-    const pwd = els.passwordInput.value.trim();
-    if (!pwd) return;
+  els.closeAdminBtn.onclick =
+    () => els.adminModal.classList.add("hidden");
 
-    LOG("UI", "unlock:attempt");
-
-    try {
-      const ok = await core.unlockVault(pwd);
-      if (!ok) throw new Error("wrong-password");
-
-      readOnly = !APP_STATE.admin.initialized;
-
-      els.lockScreen.classList.add("hidden");
-      els.app.classList.remove("hidden");
-
-      await renderExplorer();
-
-      LOG("UI", "unlock:success", { readOnly });
-    } catch (err) {
-      els.lockError.textContent = "Wrong password";
-      LOG("UI", "unlock:fail", err.message);
-    }
-  });
+  els.logoutBtn.onclick =
+    () => location.reload();
 }
 
 /* ===================== ADMIN ===================== */
 
 function wireAdmin() {
+  els.connectDriveBtn.onclick = async () => {
+    await drive.connect();
+    await waitForDrive();
+    await renderExplorer();
+  };
+
   els.openChangePwdBtn.onclick = () => {
     els.adminModal.classList.add("hidden");
     els.changePwdModal.classList.remove("hidden");
-    LOG("UI", "password:change-open");
   };
 
-  els.connectDriveBtn.onclick = async () => {
-    LOG("UI", "drive:connect-click");
-    await drive.connect(els.passwordInput.value);
-    await renderExplorer();
+  els.closeChangePwdBtn.onclick =
+    () => els.changePwdModal.classList.add("hidden");
+
+  els.changePwdConfirmBtn.onclick = async () => {
+    els.changeError.textContent = "";
+
+    const oldPwd = els.oldPwd.value;
+    const newPwd = els.newPwd.value;
+    const newPwd2 = els.newPwd2.value;
+
+    if (!oldPwd || !newPwd || newPwd !== newPwd2) {
+      els.changeError.textContent = "Password mismatch";
+      return;
+    }
+
+    try {
+      await core.verifyAdmin(oldPwd);
+      await core.unlockVault(newPwd);
+      els.changePwdModal.classList.add("hidden");
+    } catch {
+      els.changeError.textContent = "Invalid password";
+    }
   };
 }
