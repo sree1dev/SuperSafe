@@ -112,7 +112,6 @@ function wireExplorer() {
     await drive.createFile(name, selectedFolderId || core.driveRoot());
     await renderExplorer();
 
-    // auto-open newly created file
     const files = await drive.listChildren(selectedFolderId || core.driveRoot());
     const file = files.find(f => f.name === name);
     if (file) openFile(file.id);
@@ -144,13 +143,17 @@ async function renderNode(node, container, parentColor) {
 
   const label = document.createElement("div");
   label.className = "tree-label";
-  label.textContent = node.name;
   label.style.color = color;
+
+  /* ===== EMOJI ICON CHANGE (ONLY) ===== */
+  const isFolder = drive.isFolder(node);
+  label.textContent = (isFolder ? "📁 " : "📝 ") + node.name;
+  /* =================================== */
 
   row.appendChild(label);
   container.appendChild(row);
 
-  if (!drive.isFolder(node)) {
+  if (!isFolder) {
     label.onclick = () => openFile(node.id);
     attachContextMenu(label, node);
     return;
@@ -222,12 +225,9 @@ async function saveCurrentFile() {
   updateSaveState();
 }
 
-
 function updateSaveState() {
-  // visual hint only, NOT functional lock
   els.saveBtn.style.opacity = (!currentFileId || !dirty) ? "0.5" : "1";
 }
-
 
 /* ===================== TOOLBAR ===================== */
 
