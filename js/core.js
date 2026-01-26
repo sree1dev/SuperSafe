@@ -1,8 +1,7 @@
- /*  core.js  */
+/*  core.js  */
 "use strict";
 /* =========================================================
-   CORE — AUTH, STATE, CRYPTO, DB
-   SINGLE SOURCE OF TRUTH (LOCKED)
+   CORE — AUTH, STATE, CRYPTO, DB (EXTENDED SAFELY)
 ========================================================= */
 
 (() => {
@@ -63,7 +62,7 @@
       .put(val, key);
   }
 
-  /* ===================== CRYPTO ===================== */
+  /* ===================== CRYPTO (UNCHANGED) ===================== */
 
   const enc = new TextEncoder();
   const dec = new TextDecoder();
@@ -124,11 +123,6 @@
     };
   }
 
-  /**
-   * IMPORTANT:
-   * - This must be called ONLY by UI "Unlock" button
-   * - Never by input event
-   */
   async function unlockVault(password) {
     LOG("CORE", "unlock:start");
 
@@ -138,7 +132,6 @@
 
     const stored = await dbGet("vault");
 
-    // First run
     if (!stored) {
       LOG("CORE", "vault:first-run");
 
@@ -154,7 +147,6 @@
       return true;
     }
 
-    // Normal run
     try {
       vaultData = await decrypt(password, stored);
       MASTER_PASSWORD = password;
@@ -201,7 +193,7 @@
     LOG("CORE", "admin:set", email);
   }
 
-  /* ===================== DRIVE ===================== */
+  /* ===================== DRIVE ROOT ===================== */
 
   let DRIVE_ROOT = null;
 
@@ -212,6 +204,49 @@
 
   function driveRoot() {
     return DRIVE_ROOT;
+  }
+
+  /* ===================== FILE CONTENT ENCRYPTION ===================== */
+  /* Uses SAME crypto, NO schema changes, NO vault mutation */
+
+  async function encryptForFile(htmlString) {
+    if (!UNLOCKED || !MASTER_PASSWORD) {
+      throw new Error("vault-locked");
+    }
+
+    const key = await deriveKey(MASTER_PASSWORD);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const data = enc.encode(htmlString);
+
+    const buf = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      data
+    );
+
+    const out = new Uint8Array(iv.length + buf.byteLength);
+    out.set(iv, 0);
+    out.set(new Uint8Array(buf), iv.length);
+
+    return out;
+  }
+
+  async function decryptForFile(bytes) {
+    if (!UNLOCKED || !MASTER_PASSWORD || !bytes || bytes.length < 13) {
+      return "";
+    }
+
+    const iv = bytes.slice(0, 12);
+    const data = bytes.slice(12);
+
+    const key = await deriveKey(MASTER_PASSWORD);
+    const buf = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      data
+    );
+
+    return dec.decode(buf);
   }
 
   /* ===================== AUTO LOCK ===================== */
@@ -240,7 +275,9 @@
     verifyAdmin,
     setAdmin,
     setDriveRoot,
-    driveRoot
+    driveRoot,
+    encryptForFile,
+    decryptForFile
   };
 
   /* ===================== INIT ===================== */

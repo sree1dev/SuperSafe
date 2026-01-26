@@ -1,4 +1,4 @@
-<!--index.html-->
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,17 +14,8 @@
 <div id="lockScreen">
   <div class="lockBox">
     <h2>SecureText</h2>
-
-    <input
-      id="passwordInput"
-      type="password"
-      placeholder="Vault password"
-      autocomplete="off"
-      spellcheck="false"
-    />
-
+    <input id="passwordInput" type="password" placeholder="Vault password" />
     <button id="unlockBtn">Unlock</button>
-
     <div id="lockError"></div>
   </div>
 </div>
@@ -53,13 +44,10 @@
 <div id="changePwdModal" class="modal hidden">
   <div class="modalContent">
     <h3>Change Password</h3>
-
     <input id="oldPwd" type="password" placeholder="Current password" />
     <input id="newPwd" type="password" placeholder="New password" />
     <input id="newPwd2" type="password" placeholder="Confirm new password" />
-
     <div id="changeError"></div>
-
     <button id="changePwdConfirmBtn">Re-encrypt Vault</button>
     <button id="closeChangePwdBtn">Cancel</button>
   </div>
@@ -77,25 +65,32 @@
         <button id="newFileBtn">+ File</button>
       </div>
     </div>
-
     <div id="tree"></div>
   </aside>
 
   <!-- ===== MAIN ===== -->
   <main id="main">
 
+    <!-- ===== FIXED TOP BAR ===== -->
     <div id="toolbar">
       <button id="toggleExplorerBtn">☰</button>
+
+      <!-- formatting -->
+      <button data-cmd="bold"><b>B</b></button>
+      <button data-cmd="italic"><i>I</i></button>
+      <button data-cmd="insertUnorderedList">• List</button>
+      <button data-cmd="insertOrderedList">1. List</button>
+
       <span class="spacer"></span>
+
+      <!-- save / admin -->
+      <button id="saveBtn">Encrypt & Save</button>
       <button id="adminBtn">Admin</button>
       <button id="logoutBtn">Logout</button>
     </div>
 
-    <div
-      id="editor"
-      contenteditable="true"
-      spellcheck="false"
-    ></div>
+    <!-- ===== EDITOR ===== -->
+    <div id="editor" contenteditable="true" spellcheck="false"></div>
 
   </main>
 </div>
@@ -103,11 +98,9 @@
 <!-- ================= GOOGLE IDENTITY ================= -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<!-- ================= APP SCRIPTS (ORDER MATTERS) ================= -->
- <script>
+<script>
   window.GOOGLE_CLIENT_ID = "628807779499-ql68bc363klkaiuesakd1eknc38qmcah.apps.googleusercontent.com";
 </script>
-
 
 <script src="js/core.js"></script>
 <script src="js/drive.js"></script>

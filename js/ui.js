@@ -1,7 +1,7 @@
 /*  ui.js  */
 "use strict";
 /* =========================================================
-   UI — DRIVE-SYNCED, AUTO-REFRESHING
+   UI — FINAL (SAVE FIXED, AUTO OPEN FILE)
 ========================================================= */
 
 document.addEventListener("DOMContentLoaded", bootUI);
@@ -9,8 +9,9 @@ document.addEventListener("DOMContentLoaded", bootUI);
 /* ===================== STATE ===================== */
 
 let els = {};
-let readOnly = true;
 let selectedFolderId = null;
+let currentFileId = null;
+let dirty = false;
 
 /* ===================== BOOT ===================== */
 
@@ -21,12 +22,10 @@ function bootUI() {
   wireExplorer();
   wireToolbar();
   wireAdmin();
+  wireEditor();
 
-  // 🔁 auto refresh when Drive polling fires
   document.addEventListener("drive-refresh", async () => {
-    if (drive.isReady()) {
-      await renderExplorer();
-    }
+    if (drive.isReady()) await renderExplorer();
   });
 
   focusPassword();
@@ -39,7 +38,7 @@ function cacheElements() {
     "lockScreen","passwordInput","unlockBtn","lockError",
     "app","explorer","tree","editor",
     "adminModal","changePwdModal",
-    "adminBtn","logoutBtn",
+    "adminBtn","logoutBtn","saveBtn",
     "newFolderBtn","newFileBtn","toggleExplorerBtn",
     "connectDriveBtn","openChangePwdBtn",
     "closeAdminBtn","closeChangePwdBtn",
@@ -53,9 +52,10 @@ function cacheElements() {
 function resetInitialState() {
   els.lockScreen.classList.remove("hidden");
   els.app.classList.add("hidden");
-  els.adminModal.classList.add("hidden");
-  els.changePwdModal.classList.add("hidden");
-  els.lockError.textContent = "";
+  els.editor.innerHTML = "";
+  currentFileId = null;
+  dirty = false;
+  updateSaveState();
 }
 
 function focusPassword() {
@@ -63,29 +63,20 @@ function focusPassword() {
   els.passwordInput.value = "";
 }
 
-/* ===================== LOCK / UNLOCK ===================== */
+/* ===================== LOCK ===================== */
 
 function wireLock() {
   els.unlockBtn.onclick = async () => {
     const pwd = els.passwordInput.value.trim();
-    if (!pwd) {
-      els.lockError.textContent = "Enter password";
-      return;
-    }
+    if (!pwd) return;
 
     try {
       await core.unlockVault(pwd);
-
       els.lockScreen.classList.add("hidden");
       els.app.classList.remove("hidden");
-      readOnly = !core.isAdmin();
 
-      // silent reconnect
       await drive.trySilentConnect();
-
-      // wait until Drive is actually ready
       await waitForDrive();
-
       await renderExplorer();
     } catch {
       els.lockError.textContent = "Wrong password";
@@ -95,11 +86,12 @@ function wireLock() {
 
 function waitForDrive() {
   return new Promise(resolve => {
-    const check = () => {
-      if (drive.isReady()) return resolve();
-      setTimeout(check, 200);
-    };
-    check();
+    const t = setInterval(() => {
+      if (drive.isReady()) {
+        clearInterval(t);
+        resolve();
+      }
+    }, 200);
   });
 }
 
@@ -116,8 +108,14 @@ function wireExplorer() {
   els.newFileBtn.onclick = async () => {
     const name = prompt("File name");
     if (!name) return;
+
     await drive.createFile(name, selectedFolderId || core.driveRoot());
     await renderExplorer();
+
+    // auto-open newly created file
+    const files = await drive.listChildren(selectedFolderId || core.driveRoot());
+    const file = files.find(f => f.name === name);
+    if (file) openFile(file.id);
   };
 
   els.toggleExplorerBtn.onclick =
@@ -128,11 +126,8 @@ async function renderExplorer() {
   els.tree.innerHTML = "";
   selectedFolderId = null;
 
-  const rootId = core.driveRoot();
-  if (!rootId || !drive.isReady()) return;
-
   const root = {
-    id: rootId,
+    id: core.driveRoot(),
     name: "SecureText",
     mimeType: "application/vnd.google-apps.folder"
   };
@@ -156,13 +151,12 @@ async function renderNode(node, container, parentColor) {
   container.appendChild(row);
 
   if (!drive.isFolder(node)) {
+    label.onclick = () => openFile(node.id);
     attachContextMenu(label, node);
     return;
   }
 
-  label.onclick = () => {
-    selectedFolderId = node.id;
-  };
+  label.onclick = () => selectedFolderId = node.id;
 
   const childrenBox = document.createElement("div");
   childrenBox.className = "tree-children";
@@ -176,6 +170,92 @@ async function renderNode(node, container, parentColor) {
   attachContextMenu(label, node);
 }
 
+/* ===================== FILE OPEN ===================== */
+
+async function openFile(fileId) {
+  if (dirty && !confirm("Unsaved changes. Continue?")) return;
+
+  currentFileId = fileId;
+  dirty = false;
+  updateSaveState();
+
+  const bytes = await drive.loadFile(fileId);
+  const html = await core.decryptForFile(bytes);
+
+  els.editor.innerHTML = html || "";
+}
+
+/* ===================== EDITOR ===================== */
+
+function wireEditor() {
+  els.editor.oninput = () => {
+    dirty = true;
+    updateSaveState();
+  };
+}
+
+/* ===================== SAVE ===================== */
+
+async function saveCurrentFile() {
+  LOG("UI", "save:click");
+
+  if (!currentFileId) {
+    LOG("UI", "save:abort:no-file");
+    return;
+  }
+
+  if (!dirty) {
+    LOG("UI", "save:abort:not-dirty");
+    return;
+  }
+
+  const html = els.editor.innerHTML;
+  LOG("UI", "save:html-bytes", html.length);
+
+  const encrypted = await core.encryptForFile(html);
+  LOG("UI", "save:encrypted-bytes", encrypted.length);
+
+  await drive.saveFile(currentFileId, encrypted);
+  LOG("UI", "save:done");
+
+  dirty = false;
+  updateSaveState();
+}
+
+
+function updateSaveState() {
+  // visual hint only, NOT functional lock
+  els.saveBtn.style.opacity = (!currentFileId || !dirty) ? "0.5" : "1";
+}
+
+
+/* ===================== TOOLBAR ===================== */
+
+function wireToolbar() {
+  els.saveBtn.onclick = saveCurrentFile;
+
+  els.logoutBtn.onclick = async () => {
+    if (dirty) await saveCurrentFile();
+    location.reload();
+  };
+
+  els.adminBtn.onclick =
+    () => els.adminModal.classList.remove("hidden");
+
+  els.closeAdminBtn.onclick =
+    () => els.adminModal.classList.add("hidden");
+
+  document.querySelectorAll("#toolbar button[data-cmd]")
+    .forEach(btn => {
+      btn.onclick = () => {
+        document.execCommand(btn.dataset.cmd, false, null);
+        els.editor.focus();
+        dirty = true;
+        updateSaveState();
+      };
+    });
+}
+
 /* ===================== CONTEXT MENU ===================== */
 
 function attachContextMenu(el, node) {
@@ -184,18 +264,13 @@ function attachContextMenu(el, node) {
     const action = prompt("rename / delete ?");
     if (!action) return;
 
-    if (!core.isAdmin()) {
-      alert("Admin only");
-      return;
-    }
+    if (!core.isAdmin()) return;
 
     if (action === "delete") {
       const pwd = prompt("Admin password");
-      try {
-        await core.verifyAdmin(pwd);
-        await drive.trash(node.id);
-        await renderExplorer();
-      } catch {}
+      await core.verifyAdmin(pwd);
+      await drive.trash(node.id);
+      await renderExplorer();
     }
 
     if (action === "rename") {
@@ -207,19 +282,6 @@ function attachContextMenu(el, node) {
   };
 }
 
-/* ===================== TOOLBAR ===================== */
-
-function wireToolbar() {
-  els.adminBtn.onclick =
-    () => els.adminModal.classList.remove("hidden");
-
-  els.closeAdminBtn.onclick =
-    () => els.adminModal.classList.add("hidden");
-
-  els.logoutBtn.onclick =
-    () => location.reload();
-}
-
 /* ===================== ADMIN ===================== */
 
 function wireAdmin() {
@@ -227,34 +289,5 @@ function wireAdmin() {
     await drive.connect();
     await waitForDrive();
     await renderExplorer();
-  };
-
-  els.openChangePwdBtn.onclick = () => {
-    els.adminModal.classList.add("hidden");
-    els.changePwdModal.classList.remove("hidden");
-  };
-
-  els.closeChangePwdBtn.onclick =
-    () => els.changePwdModal.classList.add("hidden");
-
-  els.changePwdConfirmBtn.onclick = async () => {
-    els.changeError.textContent = "";
-
-    const oldPwd = els.oldPwd.value;
-    const newPwd = els.newPwd.value;
-    const newPwd2 = els.newPwd2.value;
-
-    if (!oldPwd || !newPwd || newPwd !== newPwd2) {
-      els.changeError.textContent = "Password mismatch";
-      return;
-    }
-
-    try {
-      await core.verifyAdmin(oldPwd);
-      await core.unlockVault(newPwd);
-      els.changePwdModal.classList.add("hidden");
-    } catch {
-      els.changeError.textContent = "Invalid password";
-    }
   };
 }

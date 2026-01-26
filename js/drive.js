@@ -1,7 +1,7 @@
 /*  drive.js  */
 "use strict";
 /* =========================================================
-   DRIVE — MIRROR (FIXED SCOPE, FULL VISIBILITY)
+   DRIVE — METADATA + ENCRYPTED CONTENT I/O
 ========================================================= */
 
 (() => {
@@ -163,12 +163,12 @@
     return c.id;
   }
 
-  /* ===================== FILE OPS ===================== */
+  /* ===================== METADATA OPS ===================== */
 
   async function listChildren(parentId) {
     const q = `'${parentId}' in parents and trashed=false`;
     const r = await gFetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,parents)`
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType)`
     );
     return r.files;
   }
@@ -184,7 +184,7 @@
   async function createFile(name, parentId) {
     await gFetch("https://www.googleapis.com/drive/v3/files", "POST", {
       name,
-      mimeType: "text/plain",
+      mimeType: "application/octet-stream",
       parents: [parentId]
     });
   }
@@ -202,6 +202,31 @@
       `https://www.googleapis.com/drive/v3/files/${id}`,
       "PATCH",
       { trashed: true }
+    );
+  }
+
+  /* ===================== CONTENT I/O ===================== */
+  /* Encrypted bytes only — no plaintext ever */
+
+  async function loadFile(fileId) {
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    return new Uint8Array(await r.arrayBuffer());
+  }
+
+  async function saveFile(fileId, bytes) {
+    await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/octet-stream"
+        },
+        body: bytes
+      }
     );
   }
 
@@ -240,6 +265,8 @@
     createFile,
     rename,
     trash,
+    loadFile,
+    saveFile,
     isFolder: n => n.mimeType === "application/vnd.google-apps.folder",
     getColor,
     isReady: () => driveReady

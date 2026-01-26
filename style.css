@@ -1,4 +1,4 @@
-/*style.css*/
+/* style.css */
 /* =========================================================
    GLOBAL
 ========================================================= */
@@ -51,32 +51,14 @@ body {
   border: 1px solid var(--border);
 }
 
-.lockBox h2 {
-  margin: 0 0 16px;
-}
-
-.lockBox input {
+.lockBox input,
+.lockBox button {
   width: 100%;
   padding: 10px;
   background: #000;
   border: 1px solid #333;
   color: #fff;
   margin-bottom: 12px;
-}
-
-.lockBox button {
-  width: 100%;
-  padding: 10px;
-  background: #1f1f1f;
-  border: 1px solid #333;
-  color: #fff;
-  cursor: pointer;
-}
-
-#lockError {
-  margin-top: 10px;
-  color: #ff6b6b;
-  font-size: 13px;
 }
 
 /* =========================================================
@@ -108,37 +90,29 @@ body {
   align-items: center;
 }
 
-.rootLabel {
-  font-weight: 600;
-}
-
 .explorerActions button {
   background: none;
   border: none;
   color: var(--text);
   cursor: pointer;
-  font-size: 13px;
-  padding: 2px 6px;
 }
 
 /* =========================================================
-   TREE (VS CODE STYLE)
+   TREE
 ========================================================= */
 
 #tree {
-  padding: 8px 0 12px 0;
+  padding: 8px 0;
   overflow-y: auto;
   font-size: 13px;
 }
 
-/* Row */
 .tree-row {
   position: relative;
   padding-left: 28px;
   margin: 2px 0;
 }
 
-/* Vertical thread */
 .tree-row::before {
   content: "";
   position: absolute;
@@ -149,7 +123,6 @@ body {
   background: var(--line-color, #444);
 }
 
-/* Horizontal connector */
 .tree-row::after {
   content: "";
   position: absolute;
@@ -160,7 +133,6 @@ body {
   background: var(--line-color, #444);
 }
 
-/* Label */
 .tree-label {
   cursor: pointer;
   padding: 3px 6px;
@@ -172,25 +144,32 @@ body {
   background: rgba(255,255,255,0.06);
 }
 
-/* Children container */
 .tree-children {
   margin-left: 14px;
 }
 
 /* =========================================================
-   MAIN / EDITOR
+   MAIN
 ========================================================= */
 
 #main {
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100vh;
 }
 
+/* =========================================================
+   FIXED TOOLBAR
+========================================================= */
+
 #toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
@@ -202,11 +181,20 @@ body {
   color: var(--text);
   padding: 4px 8px;
   cursor: pointer;
+  font-size: 13px;
+}
+
+#toolbar button:hover {
+  background: rgba(255,255,255,0.06);
 }
 
 .spacer {
   flex: 1;
 }
+
+/* =========================================================
+   EDITOR
+========================================================= */
 
 #editor {
   flex: 1;
@@ -238,27 +226,14 @@ body {
   border: 1px solid var(--border);
 }
 
-.modalContent h3 {
-  margin-top: 0;
-}
-
-.modalContent input {
+.modalContent input,
+.modalContent button {
   width: 100%;
   margin: 6px 0;
   padding: 8px;
   background: #000;
   border: 1px solid #333;
   color: #fff;
-}
-
-.modalContent button {
-  margin-top: 10px;
-  width: 100%;
-  padding: 8px;
-  background: #1f1f1f;
-  border: 1px solid #333;
-  color: #fff;
-  cursor: pointer;
 }
 
 /* =========================================================
