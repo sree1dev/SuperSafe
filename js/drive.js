@@ -1,7 +1,7 @@
-/*  drive.js  */
+/* drive.js */
 "use strict";
 /* =========================================================
-   DRIVE — METADATA + ENCRYPTED CONTENT I/O
+   DRIVE — METADATA + ENCRYPTED CONTENT I/O (CACHED)
 ========================================================= */
 
 (() => {
@@ -12,28 +12,7 @@
   let pollTimer = null;
 
   const DRIVE_FOLDER_NAME = "SecureText";
-  const POLL_INTERVAL = 30000;
-
-  /* ===================== COLORS ===================== */
-
-  const COLORS = [
-    "#4FC3F7", "#81C784", "#FFB74D",
-    "#BA68C8", "#E57373", "#64B5F6",
-    "#AED581", "#FFD54F"
-  ];
-
-  const folderColors = new Map();
-  let colorIndex = 0;
-
-  function getColor(id, parentColor) {
-    if (!folderColors.has(id)) {
-      folderColors.set(
-        id,
-        parentColor || COLORS[colorIndex++ % COLORS.length]
-      );
-    }
-    return folderColors.get(id);
-  }
+  const POLL_INTERVAL = 10000;
 
   /* ===================== LOG ===================== */
 
@@ -63,6 +42,51 @@
         .objectStore(STORE)
         .put(val, key);
     };
+  }
+
+  function idbDel(key) {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onsuccess = e => {
+      e.target.result
+        .transaction(STORE, "readwrite")
+        .objectStore(STORE)
+        .delete(key);
+    };
+  }
+
+  /* ===================== ENCRYPTED FILE CACHE ===================== */
+
+  const memFileCache = new Map(); // fileId -> Uint8Array
+
+  function cacheKey(fileId) {
+    return `file:${fileId}`;
+  }
+
+  async function getCachedFile(fileId) {
+    if (memFileCache.has(fileId)) {
+      log("cache:mem-hit", fileId);
+      return memFileCache.get(fileId);
+    }
+
+    const fromIdb = await idbGet(cacheKey(fileId));
+    if (fromIdb) {
+      log("cache:idb-hit", fileId);
+      const bytes = new Uint8Array(fromIdb);
+      memFileCache.set(fileId, bytes);
+      return bytes;
+    }
+
+    return null;
+  }
+
+  function setCachedFile(fileId, bytes) {
+    memFileCache.set(fileId, bytes);
+    idbPut(cacheKey(fileId), [...bytes]);
+  }
+
+  function invalidateFileCache(fileId) {
+    memFileCache.delete(fileId);
+    idbDel(cacheKey(fileId));
   }
 
   /* ===================== OAUTH ===================== */
@@ -198,6 +222,7 @@
   }
 
   async function trash(id) {
+    invalidateFileCache(id);
     await gFetch(
       `https://www.googleapis.com/drive/v3/files/${id}`,
       "PATCH",
@@ -205,10 +230,31 @@
     );
   }
 
-  /* ===================== CONTENT I/O ===================== */
-  /* Encrypted bytes only — no plaintext ever */
+  /* ===================== CONTENT I/O (CACHE-FIRST) ===================== */
 
   async function loadFile(fileId) {
+    const cached = await getCachedFile(fileId);
+    if (cached) {
+      // background refresh
+      refreshFileInBackground(fileId);
+      return cached;
+    }
+
+    const bytes = await fetchFileFromDrive(fileId);
+    setCachedFile(fileId, bytes);
+    return bytes;
+  }
+
+  async function refreshFileInBackground(fileId) {
+    try {
+      const bytes = await fetchFileFromDrive(fileId);
+      setCachedFile(fileId, bytes);
+      log("cache:refresh", fileId);
+    } catch {}
+  }
+
+  async function fetchFileFromDrive(fileId) {
+    log("fetch:file", fileId);
     const r = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -228,6 +274,9 @@
         body: bytes
       }
     );
+
+    setCachedFile(fileId, bytes);
+    log("save:file", fileId);
   }
 
   /* ===================== FETCH ===================== */
@@ -268,7 +317,6 @@
     loadFile,
     saveFile,
     isFolder: n => n.mimeType === "application/vnd.google-apps.folder",
-    getColor,
     isReady: () => driveReady
   };
 })();

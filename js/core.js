@@ -1,7 +1,7 @@
-/*  core.js  */
+/* core.js */
 "use strict";
 /* =========================================================
-   CORE — AUTH, STATE, CRYPTO, DB (EXTENDED SAFELY)
+   CORE — AUTH, STATE, CRYPTO, DB (AGGRESSIVE CACHE)
 ========================================================= */
 
 (() => {
@@ -24,6 +24,18 @@
 
   let MASTER_PASSWORD = null;
   let UNLOCKED = false;
+
+  /* ===================== IN-MEMORY CACHES ===================== */
+  /* Cleared on reload / auto-lock */
+
+  const decryptedFileCache = new Map(); // fileId -> html string
+  const encryptedFileCache = new Map(); // fileId -> Uint8Array
+
+  function clearCaches() {
+    decryptedFileCache.clear();
+    encryptedFileCache.clear();
+    LOG("CORE", "cache:cleared");
+  }
 
   /* ===================== DB ===================== */
 
@@ -62,7 +74,7 @@
       .put(val, key);
   }
 
-  /* ===================== CRYPTO (UNCHANGED) ===================== */
+  /* ===================== CRYPTO ===================== */
 
   const enc = new TextEncoder();
   const dec = new TextDecoder();
@@ -126,15 +138,11 @@
   async function unlockVault(password) {
     LOG("CORE", "unlock:start");
 
-    if (!password || password.length < 1) {
-      throw new Error("empty-password");
-    }
+    if (!password) throw new Error("empty-password");
 
     const stored = await dbGet("vault");
 
     if (!stored) {
-      LOG("CORE", "vault:first-run");
-
       vaultData = newVault();
       MASTER_PASSWORD = password;
       UNLOCKED = true;
@@ -143,7 +151,7 @@
       const encrypted = await encrypt(password, vaultData);
       dbPut("vault", encrypted);
 
-      LOG("CORE", "unlock:success:first-run");
+      LOG("CORE", "unlock:first-run");
       return true;
     }
 
@@ -153,7 +161,7 @@
       UNLOCKED = true;
       readOnly = !vaultData.admin.initialized;
 
-      LOG("CORE", "unlock:success", { readOnly });
+      LOG("CORE", "unlock:success");
       return true;
     } catch {
       LOG("CORE", "unlock:wrong-password");
@@ -162,13 +170,10 @@
   }
 
   async function saveVault() {
-    if (!UNLOCKED || !MASTER_PASSWORD) {
-      throw new Error("vault-locked");
-    }
-
+    if (!UNLOCKED) throw new Error("vault-locked");
     const encrypted = await encrypt(MASTER_PASSWORD, vaultData);
     dbPut("vault", encrypted);
-    LOG("CORE", "save:local");
+    LOG("CORE", "vault:saved");
   }
 
   /* ===================== ADMIN ===================== */
@@ -179,10 +184,8 @@
 
   async function verifyAdmin(password) {
     if (!UNLOCKED || password !== MASTER_PASSWORD) {
-      LOG("CORE", "admin:verify-fail");
       throw new Error("not-admin");
     }
-    LOG("CORE", "admin:verify-ok");
   }
 
   function setAdmin(email) {
@@ -190,7 +193,6 @@
     vaultData.admin.email = email;
     readOnly = false;
     saveVault();
-    LOG("CORE", "admin:set", email);
   }
 
   /* ===================== DRIVE ROOT ===================== */
@@ -206,13 +208,10 @@
     return DRIVE_ROOT;
   }
 
-  /* ===================== FILE CONTENT ENCRYPTION ===================== */
-  /* Uses SAME crypto, NO schema changes, NO vault mutation */
+  /* ===================== FILE CONTENT (CACHED) ===================== */
 
-  async function encryptForFile(htmlString) {
-    if (!UNLOCKED || !MASTER_PASSWORD) {
-      throw new Error("vault-locked");
-    }
+  async function encryptForFile(htmlString, fileId) {
+    if (!UNLOCKED) throw new Error("vault-locked");
 
     const key = await deriveKey(MASTER_PASSWORD);
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -228,25 +227,44 @@
     out.set(iv, 0);
     out.set(new Uint8Array(buf), iv.length);
 
+    if (fileId) {
+      decryptedFileCache.set(fileId, htmlString);
+      encryptedFileCache.set(fileId, out);
+      LOG("CORE", "file:cache-update", fileId);
+    }
+
     return out;
   }
 
-  async function decryptForFile(bytes) {
-    if (!UNLOCKED || !MASTER_PASSWORD || !bytes || bytes.length < 13) {
-      return "";
+  async function decryptForFile(bytes, fileId) {
+    if (!UNLOCKED || !bytes || bytes.length < 13) return "";
+
+    if (fileId && decryptedFileCache.has(fileId)) {
+      LOG("CORE", "file:cache-hit", fileId);
+      return decryptedFileCache.get(fileId);
     }
+
+    LOG("CORE", "file:cache-miss", fileId);
 
     const iv = bytes.slice(0, 12);
     const data = bytes.slice(12);
-
     const key = await deriveKey(MASTER_PASSWORD);
+
     const buf = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv },
       key,
       data
     );
 
-    return dec.decode(buf);
+    const text = dec.decode(buf);
+
+    if (fileId) {
+      decryptedFileCache.set(fileId, text);
+      encryptedFileCache.set(fileId, bytes);
+      LOG("CORE", "file:cache-store", fileId);
+    }
+
+    return text;
   }
 
   /* ===================== AUTO LOCK ===================== */
@@ -258,6 +276,7 @@
     clearTimeout(lockTimer);
     lockTimer = setTimeout(() => {
       LOG("CORE", "auto-lock");
+      clearCaches();
       location.reload();
     }, AUTO_LOCK_MS);
   }
@@ -277,7 +296,8 @@
     setDriveRoot,
     driveRoot,
     encryptForFile,
-    decryptForFile
+    decryptForFile,
+    clearCaches
   };
 
   /* ===================== INIT ===================== */
