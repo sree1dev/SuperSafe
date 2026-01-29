@@ -1,7 +1,7 @@
 /* drive.js */
 "use strict";
 /* =========================================================
-   DRIVE — METADATA + ENCRYPTED CONTENT I/O (CACHED)
+   DRIVE — METADATA + ENCRYPTED CONTENT I/O (NO CACHE)
 ========================================================= */
 
 (() => {
@@ -18,7 +18,7 @@
 
   const log = (m, d) => LOG("DRIVE", m, d);
 
-  /* ===================== IDB ===================== */
+  /* ===================== IDB (ROOT ONLY) ===================== */
 
   const DB_NAME = "securetext";
   const STORE = "vault";
@@ -42,51 +42,6 @@
         .objectStore(STORE)
         .put(val, key);
     };
-  }
-
-  function idbDel(key) {
-    const r = indexedDB.open(DB_NAME, 1);
-    r.onsuccess = e => {
-      e.target.result
-        .transaction(STORE, "readwrite")
-        .objectStore(STORE)
-        .delete(key);
-    };
-  }
-
-  /* ===================== ENCRYPTED FILE CACHE ===================== */
-
-  const memFileCache = new Map(); // fileId -> Uint8Array
-
-  function cacheKey(fileId) {
-    return `file:${fileId}`;
-  }
-
-  async function getCachedFile(fileId) {
-    if (memFileCache.has(fileId)) {
-      log("cache:mem-hit", fileId);
-      return memFileCache.get(fileId);
-    }
-
-    const fromIdb = await idbGet(cacheKey(fileId));
-    if (fromIdb) {
-      log("cache:idb-hit", fileId);
-      const bytes = new Uint8Array(fromIdb);
-      memFileCache.set(fileId, bytes);
-      return bytes;
-    }
-
-    return null;
-  }
-
-  function setCachedFile(fileId, bytes) {
-    memFileCache.set(fileId, bytes);
-    idbPut(cacheKey(fileId), [...bytes]);
-  }
-
-  function invalidateFileCache(fileId) {
-    memFileCache.delete(fileId);
-    idbDel(cacheKey(fileId));
   }
 
   /* ===================== OAUTH ===================== */
@@ -222,7 +177,6 @@
   }
 
   async function trash(id) {
-    invalidateFileCache(id);
     await gFetch(
       `https://www.googleapis.com/drive/v3/files/${id}`,
       "PATCH",
@@ -230,30 +184,9 @@
     );
   }
 
-  /* ===================== CONTENT I/O (CACHE-FIRST) ===================== */
+  /* ===================== CONTENT I/O (RAW ONLY) ===================== */
 
   async function loadFile(fileId) {
-    const cached = await getCachedFile(fileId);
-    if (cached) {
-      // background refresh
-      refreshFileInBackground(fileId);
-      return cached;
-    }
-
-    const bytes = await fetchFileFromDrive(fileId);
-    setCachedFile(fileId, bytes);
-    return bytes;
-  }
-
-  async function refreshFileInBackground(fileId) {
-    try {
-      const bytes = await fetchFileFromDrive(fileId);
-      setCachedFile(fileId, bytes);
-      log("cache:refresh", fileId);
-    } catch {}
-  }
-
-  async function fetchFileFromDrive(fileId) {
     log("fetch:file", fileId);
     const r = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
@@ -274,9 +207,6 @@
         body: bytes
       }
     );
-
-    setCachedFile(fileId, bytes);
-    log("save:file", fileId);
   }
 
   /* ===================== FETCH ===================== */

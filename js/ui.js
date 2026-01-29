@@ -1,7 +1,7 @@
 /* ui.js */
 "use strict";
 /* =========================================================
-   UI — OPTION A + SELECTION + DBLCLICK COLLAPSE (OPTIMIZED)
+   UI — OPTION A + SELECTION + DBLCLICK COLLAPSE (CACHE POWERED)
 ========================================================= */
 
 document.addEventListener("DOMContentLoaded", bootUI);
@@ -35,17 +35,16 @@ function bootUI() {
   focusPassword();
 }
 
-/* ===================== CACHE ===================== */
+/* ===================== ELEMENT CACHE ===================== */
 
 function cacheElements() {
   [
     "lockScreen","passwordInput","unlockBtn","lockError",
     "app","explorer","tree","editor",
-    "adminModal","changePwdModal",
+    "adminModal",
     "adminBtn","logoutBtn","saveBtn",
     "newFolderBtn","newFileBtn","toggleExplorerBtn",
-    "connectDriveBtn","openChangePwdBtn",
-    "closeAdminBtn","closeChangePwdBtn"
+    "connectDriveBtn","closeAdminBtn"
   ].forEach(id => els[id] = document.getElementById(id));
 }
 
@@ -74,6 +73,7 @@ function wireLock() {
 
     try {
       await core.unlockVault(pwd);
+
       els.lockScreen.classList.add("hidden");
       els.app.classList.remove("hidden");
 
@@ -95,7 +95,7 @@ function waitForDrive() {
         clearInterval(t);
         r();
       }
-    }, 150);
+    }, 120);
   });
 }
 
@@ -129,10 +129,10 @@ function wireExplorer() {
 /* ===================== CONDITIONAL REFRESH ===================== */
 
 async function conditionalRefresh(force) {
-  const signature = await buildTreeSignature(core.driveRoot());
-  if (!force && signature === lastTreeSignature) return;
+  const sig = await buildTreeSignature(core.driveRoot());
+  if (!force && sig === lastTreeSignature) return;
 
-  lastTreeSignature = signature;
+  lastTreeSignature = sig;
   await renderExplorer();
 }
 
@@ -150,19 +150,20 @@ async function buildTreeSignature(folderId, acc = []) {
 /* ===================== COLOR ===================== */
 
 function colorFromId(id) {
-  let hash = 0;
+  let h = 0;
   for (let i = 0; i < id.length; i++) {
-    hash = (hash << 5) - hash + id.charCodeAt(i);
-    hash |= 0;
+    h = (h << 5) - h + id.charCodeAt(i);
+    h |= 0;
   }
-  return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`;
+  return `hsl(${Math.abs(h) % 360},70%,60%)`;
 }
 
-/* ===================== TREE RENDER ===================== */
+/* ===================== TREE ===================== */
 
 async function renderExplorer() {
   els.tree.innerHTML = "";
   selectedFolderId = null;
+  selectedLabelEl = null;
 
   const root = {
     id: core.driveRoot(),
@@ -197,21 +198,17 @@ async function renderNode(node, container, inheritedColor) {
     container.appendChild(childrenBox);
   }
 
-  /* SINGLE CLICK */
+  /* click */
   label.onclick = () => {
     setSelected(label);
-    if (isFolder) {
-      selectedFolderId = node.id;
-    } else {
-      openFile(node.id);
-    }
+    if (isFolder) selectedFolderId = node.id;
+    else openFile(node.id);
   };
 
-  /* DOUBLE CLICK */
+  /* dbl click */
   if (isFolder) {
-    label.ondblclick = () => {
+    label.ondblclick = () =>
       childrenBox.classList.toggle("hidden");
-    };
   }
 
   attachContextMenu(label, node);
@@ -226,37 +223,29 @@ async function renderNode(node, container, inheritedColor) {
 
 /* ===================== SELECTION ===================== */
 
-function setSelected(labelEl) {
-  if (selectedLabelEl) {
-    selectedLabelEl.classList.remove("selected");
-  }
-  selectedLabelEl = labelEl;
-  selectedLabelEl.classList.add("selected");
+function setSelected(el) {
+  if (selectedLabelEl) selectedLabelEl.classList.remove("selected");
+  selectedLabelEl = el;
+  el.classList.add("selected");
 }
 
-/* ===================== FILE OPEN (INSTANT) ===================== */
+/* ===================== FILE OPEN (CACHE) ===================== */
 
 async function openFile(fileId, skipConfirm = false) {
   if (dirty && !skipConfirm) {
-    const ok = confirm("Unsaved changes. Continue?");
-    if (!ok) return;
+    if (!confirm("Unsaved changes. Continue?")) return;
   }
 
   currentFileId = fileId;
   dirty = false;
   updateSaveState();
 
-  // cache-first → instant
-  const bytes = await drive.loadFile(fileId);
   els.editor.innerHTML = "";
 
-  // decrypt async but no UI delay
-  queueMicrotask(async () => {
-    const html = await core.decryptForFile(bytes);
-    if (currentFileId === fileId) {
-      els.editor.innerHTML = html || "";
-    }
-  });
+  const text = await cache.loadText(fileId);
+  if (currentFileId === fileId) {
+    els.editor.innerHTML = text || "";
+  }
 }
 
 /* ===================== EDITOR ===================== */
@@ -273,9 +262,7 @@ function wireEditor() {
 async function saveCurrentFile() {
   if (!currentFileId || !dirty) return;
 
-  const encrypted = await core.encryptForFile(els.editor.innerHTML);
-  await drive.saveFile(currentFileId, encrypted);
-
+  await cache.saveText(currentFileId, els.editor.innerHTML);
   dirty = false;
   updateSaveState();
 }
@@ -316,12 +303,15 @@ function wireToolbar() {
 function attachContextMenu(el, node) {
   el.oncontextmenu = async e => {
     e.preventDefault();
+    if (!core.isAdmin()) return;
+
     const action = prompt("rename / delete ?");
-    if (!action || !core.isAdmin()) return;
+    if (!action) return;
 
     if (action === "delete") {
       const pwd = prompt("Admin password");
       await core.verifyAdmin(pwd);
+      cache.invalidate(node.id);
       await drive.trash(node.id);
       await conditionalRefresh(true);
     }

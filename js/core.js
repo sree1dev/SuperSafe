@@ -1,7 +1,7 @@
 /* core.js */
 "use strict";
 /* =========================================================
-   CORE — AUTH, STATE, CRYPTO, DB (AGGRESSIVE CACHE)
+   CORE — AUTH, STATE, CRYPTO, DB (PURE, NO CACHE)
 ========================================================= */
 
 (() => {
@@ -24,18 +24,6 @@
 
   let MASTER_PASSWORD = null;
   let UNLOCKED = false;
-
-  /* ===================== IN-MEMORY CACHES ===================== */
-  /* Cleared on reload / auto-lock */
-
-  const decryptedFileCache = new Map(); // fileId -> html string
-  const encryptedFileCache = new Map(); // fileId -> Uint8Array
-
-  function clearCaches() {
-    decryptedFileCache.clear();
-    encryptedFileCache.clear();
-    LOG("CORE", "cache:cleared");
-  }
 
   /* ===================== DB ===================== */
 
@@ -208,9 +196,9 @@
     return DRIVE_ROOT;
   }
 
-  /* ===================== FILE CONTENT (CACHED) ===================== */
+  /* ===================== FILE CONTENT (PURE) ===================== */
 
-  async function encryptForFile(htmlString, fileId) {
+  async function encryptForFile(htmlString) {
     if (!UNLOCKED) throw new Error("vault-locked");
 
     const key = await deriveKey(MASTER_PASSWORD);
@@ -226,25 +214,11 @@
     const out = new Uint8Array(iv.length + buf.byteLength);
     out.set(iv, 0);
     out.set(new Uint8Array(buf), iv.length);
-
-    if (fileId) {
-      decryptedFileCache.set(fileId, htmlString);
-      encryptedFileCache.set(fileId, out);
-      LOG("CORE", "file:cache-update", fileId);
-    }
-
     return out;
   }
 
-  async function decryptForFile(bytes, fileId) {
+  async function decryptForFile(bytes) {
     if (!UNLOCKED || !bytes || bytes.length < 13) return "";
-
-    if (fileId && decryptedFileCache.has(fileId)) {
-      LOG("CORE", "file:cache-hit", fileId);
-      return decryptedFileCache.get(fileId);
-    }
-
-    LOG("CORE", "file:cache-miss", fileId);
 
     const iv = bytes.slice(0, 12);
     const data = bytes.slice(12);
@@ -256,15 +230,7 @@
       data
     );
 
-    const text = dec.decode(buf);
-
-    if (fileId) {
-      decryptedFileCache.set(fileId, text);
-      encryptedFileCache.set(fileId, bytes);
-      LOG("CORE", "file:cache-store", fileId);
-    }
-
-    return text;
+    return dec.decode(buf);
   }
 
   /* ===================== AUTO LOCK ===================== */
@@ -276,7 +242,6 @@
     clearTimeout(lockTimer);
     lockTimer = setTimeout(() => {
       LOG("CORE", "auto-lock");
-      clearCaches();
       location.reload();
     }, AUTO_LOCK_MS);
   }
@@ -296,8 +261,7 @@
     setDriveRoot,
     driveRoot,
     encryptForFile,
-    decryptForFile,
-    clearCaches
+    decryptForFile
   };
 
   /* ===================== INIT ===================== */
