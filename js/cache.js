@@ -1,17 +1,12 @@
 /* cache.js */
 "use strict";
 /* =========================================================
-   CACHE — FILE CONTENT (ENCRYPTED + DECRYPTED)
-   - memory-first
-   - idb-backed
-   - promise dedup
+   CACHE — LOCAL-FIRST · ENCRYPTED · MANUAL SYNC (FINAL)
 ========================================================= */
 
 (() => {
   const DB_NAME = "securetext";
   const STORE = "vault";
-
-  /* ===================== LOG ===================== */
 
   const log = (m, d) => LOG("CACHE", m, d);
 
@@ -59,78 +54,39 @@
   const memDecrypted = new Map(); // fileId -> string
   const inFlight = new Map();     // fileId -> Promise<string>
 
-  /* ===================== PUBLIC ===================== */
+  /* ===================== LOAD ===================== */
 
   async function loadText(fileId) {
-    // 🔒 promise de-dup
     if (inFlight.has(fileId)) {
       log("hit:inflight", fileId);
       return inFlight.get(fileId);
     }
 
-    // ⚡ decrypted memory
     if (memDecrypted.has(fileId)) {
       log("hit:mem-dec", fileId);
-      refreshInBackground(fileId);
       return memDecrypted.get(fileId);
     }
 
-    const p = loadTextInternal(fileId);
+    const p = loadInternal(fileId);
     inFlight.set(fileId, p);
 
     try {
-      const text = await p;
-      return text;
+      return await p;
     } finally {
       inFlight.delete(fileId);
     }
   }
 
-  async function saveText(fileId, html) {
-    memDecrypted.set(fileId, html);
-
-    const encrypted = await core.encryptForFile(html);
-    memEncrypted.set(fileId, encrypted);
-
-    idbPut(encKey(fileId), [...encrypted]);
-    idbPut(decKey(fileId), html);
-
-    await drive.saveFile(fileId, encrypted);
-    log("save", fileId);
-  }
-
-  function invalidate(fileId) {
-    memEncrypted.delete(fileId);
-    memDecrypted.delete(fileId);
-    inFlight.delete(fileId);
-    idbDel(encKey(fileId));
-    idbDel(decKey(fileId));
-    log("invalidate", fileId);
-  }
-
-  /* ===================== INTERNAL ===================== */
-
-  async function loadTextInternal(fileId) {
-    // 🧠 decrypted idb
+  async function loadInternal(fileId) {
+    /* ---------- decrypted IDB ---------- */
     const dec = await idbGet(decKey(fileId));
-    if (dec) {
+    if (dec !== null) {
       log("hit:idb-dec", fileId);
       memDecrypted.set(fileId, dec);
-      refreshInBackground(fileId);
       return dec;
     }
 
-    // 🧠 encrypted memory
-    if (memEncrypted.has(fileId)) {
-      log("hit:mem-enc", fileId);
-      const text = await core.decryptForFile(memEncrypted.get(fileId));
-      memDecrypted.set(fileId, text);
-      idbPut(decKey(fileId), text);
-      refreshInBackground(fileId);
-      return text;
-    }
-
-    // 🧠 encrypted idb
+    /* ---------- encrypted IDB ---------- */
     const encArr = await idbGet(encKey(fileId));
     if (encArr) {
       log("hit:idb-enc", fileId);
@@ -140,13 +96,13 @@
       const text = await core.decryptForFile(bytes);
       memDecrypted.set(fileId, text);
       idbPut(decKey(fileId), text);
-      refreshInBackground(fileId);
       return text;
     }
 
-    // 🌐 DRIVE (cold)
-    log("miss:drive", fileId);
+    /* ---------- DRIVE (cold bootstrap only) ---------- */
+    log("cold:drive", fileId);
     const bytes = await drive.loadFile(fileId);
+
     memEncrypted.set(fileId, bytes);
     idbPut(encKey(fileId), [...bytes]);
 
@@ -157,27 +113,53 @@
     return text;
   }
 
-  async function refreshInBackground(fileId) {
-    try {
-      const bytes = await drive.loadFile(fileId);
-      memEncrypted.set(fileId, bytes);
-      idbPut(encKey(fileId), [...bytes]);
+  /* ===================== SAVE (LOCAL ONLY) ===================== */
 
-      const text = await core.decryptForFile(bytes);
-      memDecrypted.set(fileId, text);
-      idbPut(decKey(fileId), text);
+  async function saveLocal(fileId, html) {
+    memDecrypted.set(fileId, html);
 
-      log("bg-refresh", fileId);
-    } catch {
-      /* silent */
+    const encrypted = await core.encryptForFile(html);
+    memEncrypted.set(fileId, encrypted);
+
+    idbPut(encKey(fileId), [...encrypted]);
+    idbPut(decKey(fileId), html);
+
+    log("save:local", fileId);
+  }
+
+  /* ===================== FLUSH ===================== */
+
+  async function flushToDrive(fileId) {
+    if (!memEncrypted.has(fileId)) return;
+    await drive.saveFile(fileId, memEncrypted.get(fileId));
+    log("flush:file", fileId);
+  }
+
+  async function flushAll() {
+    for (const fileId of memEncrypted.keys()) {
+      await flushToDrive(fileId);
     }
+    log("flush:all");
+  }
+
+  /* ===================== INVALIDATE ===================== */
+
+  function invalidate(fileId) {
+    memEncrypted.delete(fileId);
+    memDecrypted.delete(fileId);
+    inFlight.delete(fileId);
+    idbDel(encKey(fileId));
+    idbDel(decKey(fileId));
+    log("invalidate", fileId);
   }
 
   /* ===================== EXPORT ===================== */
 
   window.cache = {
     loadText,
-    saveText,
+    saveLocal,
+    flushToDrive,
+    flushAll,
     invalidate
   };
 })();

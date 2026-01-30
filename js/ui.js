@@ -1,7 +1,7 @@
 /* ui.js */
 "use strict";
 /* =========================================================
-   UI — OPTION A + SELECTION + DBLCLICK COLLAPSE (CACHE POWERED)
+   UI — LOCAL-FIRST · MANUAL SYNC · CACHE-DRIVEN (FINAL)
 ========================================================= */
 
 document.addEventListener("DOMContentLoaded", bootUI);
@@ -9,12 +9,14 @@ document.addEventListener("DOMContentLoaded", bootUI);
 /* ===================== STATE ===================== */
 
 let els = {};
-let selectedFolderId = null;
 let currentFileId = null;
-let dirty = false;
-
-let lastTreeSignature = null;
+let selectedFolderId = null;
 let selectedLabelEl = null;
+
+let dirty = false;
+let isSaving = false;
+let autosaveTimer = null;
+let lastTreeSignature = null;
 
 /* ===================== BOOT ===================== */
 
@@ -26,12 +28,6 @@ function bootUI() {
   wireToolbar();
   wireAdmin();
   wireEditor();
-
-  document.addEventListener("drive-refresh", async () => {
-    if (!drive.isReady()) return;
-    await conditionalRefresh(false);
-  });
-
   focusPassword();
 }
 
@@ -42,7 +38,7 @@ function cacheElements() {
     "lockScreen","passwordInput","unlockBtn","lockError",
     "app","explorer","tree","editor",
     "adminModal",
-    "adminBtn","logoutBtn","saveBtn",
+    "adminBtn","logoutBtn","saveBtn","refreshBtn",
     "newFolderBtn","newFileBtn","toggleExplorerBtn",
     "connectDriveBtn","closeAdminBtn"
   ].forEach(id => els[id] = document.getElementById(id));
@@ -60,8 +56,8 @@ function resetInitialState() {
 }
 
 function focusPassword() {
-  els.passwordInput.focus();
   els.passwordInput.value = "";
+  els.passwordInput.focus();
 }
 
 /* ===================== LOCK ===================== */
@@ -79,9 +75,7 @@ function wireLock() {
 
       await drive.trySilentConnect();
       await waitForDrive();
-
-      lastTreeSignature = null;
-      await conditionalRefresh(true);
+      await manualRefresh();
     } catch {
       els.lockError.textContent = "Wrong password";
     }
@@ -107,7 +101,7 @@ function wireExplorer() {
     if (!name) return;
 
     await drive.createFolder(name, selectedFolderId || core.driveRoot());
-    await conditionalRefresh(true);
+    await manualRefresh();
   };
 
   els.newFileBtn.onclick = async () => {
@@ -115,22 +109,23 @@ function wireExplorer() {
     if (!name) return;
 
     await drive.createFile(name, selectedFolderId || core.driveRoot());
-    await conditionalRefresh(true);
+    await manualRefresh();
 
     const files = await drive.listChildren(selectedFolderId || core.driveRoot());
     const f = files.find(x => x.name === name);
-    if (f) openFile(f.id, true);
+    if (f) await openFile(f.id);
   };
 
   els.toggleExplorerBtn.onclick =
     () => els.explorer.classList.toggle("open");
 }
 
-/* ===================== CONDITIONAL REFRESH ===================== */
+/* ===================== MANUAL REFRESH ===================== */
 
-async function conditionalRefresh(force) {
+async function manualRefresh() {
+  await cache.flushAll();
   const sig = await buildTreeSignature(core.driveRoot());
-  if (!force && sig === lastTreeSignature) return;
+  if (sig === lastTreeSignature) return;
 
   lastTreeSignature = sig;
   await renderExplorer();
@@ -147,17 +142,6 @@ async function buildTreeSignature(folderId, acc = []) {
   return acc.sort().join(";");
 }
 
-/* ===================== COLOR ===================== */
-
-function colorFromId(id) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) {
-    h = (h << 5) - h + id.charCodeAt(i);
-    h |= 0;
-  }
-  return `hsl(${Math.abs(h) % 360},70%,60%)`;
-}
-
 /* ===================== TREE ===================== */
 
 async function renderExplorer() {
@@ -172,6 +156,15 @@ async function renderExplorer() {
   };
 
   await renderNode(root, els.tree, null);
+}
+
+function colorFromId(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = (h << 5) - h + id.charCodeAt(i);
+    h |= 0;
+  }
+  return `hsl(${Math.abs(h) % 360},70%,60%)`;
 }
 
 async function renderNode(node, container, inheritedColor) {
@@ -198,14 +191,15 @@ async function renderNode(node, container, inheritedColor) {
     container.appendChild(childrenBox);
   }
 
-  /* click */
-  label.onclick = () => {
+  label.onclick = async () => {
     setSelected(label);
-    if (isFolder) selectedFolderId = node.id;
-    else openFile(node.id);
+    if (isFolder) {
+      selectedFolderId = node.id;
+    } else {
+      await openFile(node.id);
+    }
   };
 
-  /* dbl click */
   if (isFolder) {
     label.ondblclick = () =>
       childrenBox.classList.toggle("hidden");
@@ -229,11 +223,11 @@ function setSelected(el) {
   el.classList.add("selected");
 }
 
-/* ===================== FILE OPEN (CACHE) ===================== */
+/* ===================== FILE OPEN ===================== */
 
-async function openFile(fileId, skipConfirm = false) {
-  if (dirty && !skipConfirm) {
-    if (!confirm("Unsaved changes. Continue?")) return;
+async function openFile(fileId) {
+  if (dirty && currentFileId) {
+    await cache.saveLocal(currentFileId, els.editor.innerHTML);
   }
 
   currentFileId = fileId;
@@ -254,31 +248,55 @@ function wireEditor() {
   els.editor.oninput = () => {
     dirty = true;
     updateSaveState();
+
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+      if (currentFileId) {
+        cache.saveLocal(currentFileId, els.editor.innerHTML);
+      }
+    }, 800);
   };
 }
 
 /* ===================== SAVE ===================== */
 
 async function saveCurrentFile() {
-  if (!currentFileId || !dirty) return;
+  if (!currentFileId || !dirty || isSaving) return;
 
-  await cache.saveText(currentFileId, els.editor.innerHTML);
+  isSaving = true;
+  els.saveBtn.textContent = "Saving…";
+
+  await cache.saveLocal(currentFileId, els.editor.innerHTML);
+  await cache.flushAll();
+
   dirty = false;
+  isSaving = false;
+  els.saveBtn.textContent = "Encrypt & Save";
   updateSaveState();
 }
 
 function updateSaveState() {
   els.saveBtn.style.opacity =
-    (!currentFileId || !dirty) ? "0.45" : "1";
+    (!currentFileId || !dirty || isSaving) ? "0.45" : "1";
 }
 
 /* ===================== TOOLBAR ===================== */
 
 function wireToolbar() {
   els.saveBtn.onclick = saveCurrentFile;
+  els.refreshBtn.onclick = manualRefresh;
 
   els.logoutBtn.onclick = async () => {
-    if (dirty) await saveCurrentFile();
+    if (isSaving) return;
+
+    isSaving = true;
+    els.logoutBtn.textContent = "Saving…";
+
+    if (dirty && currentFileId) {
+      await cache.saveLocal(currentFileId, els.editor.innerHTML);
+    }
+
+    await cache.flushAll();
     location.reload();
   };
 
@@ -313,14 +331,14 @@ function attachContextMenu(el, node) {
       await core.verifyAdmin(pwd);
       cache.invalidate(node.id);
       await drive.trash(node.id);
-      await conditionalRefresh(true);
+      await manualRefresh();
     }
 
     if (action === "rename") {
       const name = prompt("New name");
       if (!name) return;
       await drive.rename(node.id, name);
-      await conditionalRefresh(true);
+      await manualRefresh();
     }
   };
 }
@@ -331,7 +349,6 @@ function wireAdmin() {
   els.connectDriveBtn.onclick = async () => {
     await drive.connect();
     await waitForDrive();
-    lastTreeSignature = null;
-    await conditionalRefresh(true);
+    await manualRefresh();
   };
 }

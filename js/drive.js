@@ -1,7 +1,10 @@
 /* drive.js */
 "use strict";
 /* =========================================================
-   DRIVE — METADATA + ENCRYPTED CONTENT I/O (NO CACHE)
+   DRIVE — PURE GOOGLE DRIVE I/O (MANUAL ONLY)
+   - NO polling
+   - NO cache
+   - NO UI events
 ========================================================= */
 
 (() => {
@@ -9,10 +12,8 @@
   let accessToken = null;
   let profileEmail = null;
   let driveReady = false;
-  let pollTimer = null;
 
   const DRIVE_FOLDER_NAME = "SecureText";
-  const POLL_INTERVAL = 10000;
 
   /* ===================== LOG ===================== */
 
@@ -76,7 +77,6 @@
     core.setDriveRoot(rootId);
     driveReady = true;
     updateUI(true);
-    startPolling();
 
     log("ready");
   }
@@ -93,18 +93,6 @@
     initClient();
     tokenClient.requestAccessToken({ prompt: "" });
     return true;
-  }
-
-  /* ===================== POLLING ===================== */
-
-  function startPolling() {
-    if (pollTimer) return;
-
-    pollTimer = setInterval(() => {
-      if (!driveReady) return;
-      document.dispatchEvent(new CustomEvent("drive-refresh"));
-      log("poll:refresh");
-    }, POLL_INTERVAL);
   }
 
   /* ===================== PROFILE ===================== */
@@ -184,7 +172,7 @@
     );
   }
 
-  /* ===================== CONTENT I/O (RAW ONLY) ===================== */
+  /* ===================== CONTENT I/O ===================== */
 
   async function loadFile(fileId) {
     log("fetch:file", fileId);
