@@ -41,7 +41,10 @@ function cacheElements() {
     "adminBtn","logoutBtn","saveBtn","refreshBtn",
     "newFolderBtn","newFileBtn","toggleExplorerBtn",
     "connectDriveBtn","closeAdminBtn"
-  ].forEach(id => els[id] = document.getElementById(id));
+  ].forEach(id => {
+    els[id] = document.getElementById(id);
+    if (!els[id]) console.warn("UI missing:", id);
+  });
 }
 
 /* ===================== INIT ===================== */
@@ -83,11 +86,11 @@ function wireLock() {
 }
 
 function waitForDrive() {
-  return new Promise(r => {
+  return new Promise(resolve => {
     const t = setInterval(() => {
       if (drive.isReady()) {
         clearInterval(t);
-        r();
+        resolve();
       }
     }, 120);
   });
@@ -124,6 +127,7 @@ function wireExplorer() {
 
 async function manualRefresh() {
   await cache.flushAll();
+
   const sig = await buildTreeSignature(core.driveRoot());
   if (sig === lastTreeSignature) return;
 

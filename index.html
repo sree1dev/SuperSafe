@@ -72,22 +72,25 @@
   <main id="main">
 
     <!-- ===== FIXED TOP BAR ===== -->
-    <div id="toolbar">
-      <button id="toggleExplorerBtn">☰</button>
+<div id="toolbar">
+  <!-- left -->
+  <button id="toggleExplorerBtn">☰</button>
 
-      <!-- formatting -->
-      <button data-cmd="bold"><b>B</b></button>
-      <button data-cmd="italic"><i>I</i></button>
-      <button data-cmd="insertUnorderedList">• List</button>
-      <button data-cmd="insertOrderedList">1. List</button>
+  <!-- formatting -->
+  <button data-cmd="bold"><b>B</b></button>
+  <button data-cmd="italic"><i>I</i></button>
+  <button data-cmd="insertUnorderedList">• List</button>
+  <button data-cmd="insertOrderedList">1. List</button>
 
-      <span class="spacer"></span>
+  <span class="spacer"></span>
 
-      <!-- save / admin -->
-      <button id="saveBtn">Encrypt & Save</button>
-      <button id="adminBtn">Admin</button>
-      <button id="logoutBtn">Logout</button>
-    </div>
+  <!-- sync / actions -->
+  <button id="refreshBtn">Refresh</button>
+  <button id="saveBtn">Encrypt & Save</button>
+  <button id="adminBtn">Admin</button>
+  <button id="logoutBtn">Logout</button>
+</div>
+
 
     <!-- ===== EDITOR ===== -->
     <div id="editor" contenteditable="true" spellcheck="false"></div>
