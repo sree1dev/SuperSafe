@@ -1,7 +1,7 @@
 /* ui.js */
 "use strict";
 /* =========================================================
-   UI — LOCAL-FIRST · MANUAL SYNC · CACHE-DRIVEN (FINAL)
+   UI — LOCAL-FIRST · MANUAL SYNC · ADMIN-AWARE
 ========================================================= */
 
 document.addEventListener("DOMContentLoaded", bootUI);
@@ -76,7 +76,8 @@ function wireLock() {
       els.lockScreen.classList.add("hidden");
       els.app.classList.remove("hidden");
 
-      await drive.trySilentConnect();
+      // Drive is optional but auto-attempted
+      await drive.trySilentConnect().catch(() => {});
       await waitForDrive();
       await manualRefresh();
     } catch {
@@ -305,7 +306,7 @@ function wireToolbar() {
   };
 
   els.adminBtn.onclick =
-    () => els.adminModal.classList.remove("hidden");
+    () => openAdminPanel();
 
   els.closeAdminBtn.onclick =
     () => els.adminModal.classList.add("hidden");
@@ -331,10 +332,8 @@ function attachContextMenu(el, node) {
     if (!action) return;
 
     if (action === "delete") {
-      const pwd = prompt("Admin password");
-      await core.verifyAdmin(pwd);
-      cache.invalidate(node.id);
       await drive.trash(node.id);
+      cache.invalidate(node.id);
       await manualRefresh();
     }
 
@@ -349,10 +348,34 @@ function attachContextMenu(el, node) {
 
 /* ===================== ADMIN ===================== */
 
+function openAdminPanel() {
+  const pwd = prompt("Admin password");
+  if (!pwd) return;
+
+  core.verifyAdmin(pwd)
+    .then(() => els.adminModal.classList.remove("hidden"))
+    .catch(() => alert("Wrong admin password"));
+}
+
 function wireAdmin() {
   els.connectDriveBtn.onclick = async () => {
     await drive.connect();
     await waitForDrive();
     await manualRefresh();
   };
+
+  // user-password rotation
+  const rotateBtn = document.createElement("button");
+  rotateBtn.textContent = "Change Writer Password";
+  rotateBtn.onclick = async () => {
+    const newPwd = prompt("New writer password");
+    if (!newPwd) return;
+
+    await core.rotateUserPassword(newPwd);
+    alert("Writer password changed. Others are locked out.");
+  };
+
+  els.adminModal
+    .querySelector(".modalContent")
+    .appendChild(rotateBtn);
 }

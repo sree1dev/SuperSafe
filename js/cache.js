@@ -1,7 +1,7 @@
 /* cache.js */
 "use strict";
 /* =========================================================
-   CACHE — LOCAL-FIRST · ENCRYPTED · MANUAL SYNC (FINAL)
+   CACHE — LOCAL-FIRST · ENCRYPTED · MIGRATION-SAFE
 ========================================================= */
 
 (() => {
@@ -18,7 +18,7 @@
       r.onsuccess = e => {
         const db = e.target.result;
         const g = db.transaction(STORE).objectStore(STORE).get(key);
-        g.onsuccess = () => resolve(g.result || null);
+        g.onsuccess = () => resolve(g.result ?? null);
       };
     });
   }
@@ -53,6 +53,24 @@
   const memEncrypted = new Map(); // fileId -> Uint8Array
   const memDecrypted = new Map(); // fileId -> string
   const inFlight = new Map();     // fileId -> Promise<string>
+
+  /* ===================== SAFE DECRYPT ===================== */
+
+  async function safeDecrypt(bytes, fileId) {
+    // empty or too small to contain IV
+    if (!bytes || bytes.length < 13) {
+      log("legacy:empty-or-plain", fileId);
+      return "";
+    }
+
+    try {
+      return await core.decryptForFile(bytes);
+    } catch {
+      // legacy / wrong-format encrypted file
+      log("legacy:decrypt-failed", fileId);
+      return "";
+    }
+  }
 
   /* ===================== LOAD ===================== */
 
@@ -93,20 +111,20 @@
       const bytes = new Uint8Array(encArr);
       memEncrypted.set(fileId, bytes);
 
-      const text = await core.decryptForFile(bytes);
+      const text = await safeDecrypt(bytes, fileId);
       memDecrypted.set(fileId, text);
       idbPut(decKey(fileId), text);
       return text;
     }
 
-    /* ---------- DRIVE (cold bootstrap only) ---------- */
+    /* ---------- DRIVE (cold bootstrap) ---------- */
     log("cold:drive", fileId);
     const bytes = await drive.loadFile(fileId);
 
     memEncrypted.set(fileId, bytes);
     idbPut(encKey(fileId), [...bytes]);
 
-    const text = await core.decryptForFile(bytes);
+    const text = await safeDecrypt(bytes, fileId);
     memDecrypted.set(fileId, text);
     idbPut(decKey(fileId), text);
 

@@ -1,19 +1,18 @@
 /* core.js */
 "use strict";
 /* =========================================================
-   CORE — AUTH, STATE, CRYPTO, DB (PURE, NO CACHE)
+   CORE — AUTH, STATE, CRYPTO, DB
+   - ADMIN / USER SPLIT
+   - FILE MASTER KEY
+   - DRIVE ROOT AUTHORITY
 ========================================================= */
 
 (() => {
   /* ===================== LOG ===================== */
 
   const TS = () => new Date().toISOString();
-  window.LOG = (scope, msg, data) => {
-    console.log(
-      `[${TS()}] [${scope}] ${msg}`,
-      data !== undefined ? data : ""
-    );
-  };
+  window.LOG = (scope, msg, data) =>
+    console.log(`[${TS()}] [${scope}] ${msg}`, data ?? "");
 
   LOG("CORE", "init");
 
@@ -22,8 +21,11 @@
   window.vaultData = null;
   window.readOnly = true;
 
-  let MASTER_PASSWORD = null;
-  let UNLOCKED = false;
+  let ADMIN_KEY = null;
+  let USER_KEY = null;
+  let FILE_KEY = null;
+
+  let DRIVE_ROOT = null;
 
   /* ===================== DB ===================== */
 
@@ -38,36 +40,30 @@
         e.target.result.createObjectStore(STORE);
       req.onsuccess = e => {
         db = e.target.result;
-        LOG("DB", "open");
         resolve();
       };
     });
   }
 
   function dbGet(key) {
-    LOG("DB", "get", key);
     return new Promise(resolve => {
-      const req = db
-        .transaction(STORE)
-        .objectStore(STORE)
-        .get(key);
-      req.onsuccess = () => resolve(req.result || null);
+      const r = db.transaction(STORE).objectStore(STORE).get(key);
+      r.onsuccess = () => resolve(r.result || null);
     });
   }
 
   function dbPut(key, val) {
-    LOG("DB", "put", key);
     db.transaction(STORE, "readwrite")
       .objectStore(STORE)
       .put(val, key);
   }
 
-  /* ===================== CRYPTO ===================== */
+  /* ===================== CRYPTO HELPERS ===================== */
 
   const enc = new TextEncoder();
   const dec = new TextDecoder();
 
-  async function deriveKey(password) {
+  async function deriveKey(password, salt) {
     const base = await crypto.subtle.importKey(
       "raw",
       enc.encode(password),
@@ -75,11 +71,10 @@
       false,
       ["deriveKey"]
     );
-
     return crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
-        salt: enc.encode("securetext-v1"),
+        salt: enc.encode(salt),
         iterations: 150000,
         hash: "SHA-256"
       },
@@ -90,127 +85,179 @@
     );
   }
 
-  async function encrypt(password, obj) {
-    const key = await deriveKey(password);
+  async function aesEncrypt(key, bytes) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const buf = await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
       key,
-      enc.encode(JSON.stringify(obj))
+      bytes
     );
     return { iv: [...iv], data: [...new Uint8Array(buf)] };
   }
 
-  async function decrypt(password, payload) {
-    const key = await deriveKey(password);
+  async function aesDecrypt(key, payload) {
     const buf = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: new Uint8Array(payload.iv) },
       key,
       new Uint8Array(payload.data)
     );
-    return JSON.parse(dec.decode(buf));
+    return new Uint8Array(buf);
   }
 
-  /* ===================== VAULT ===================== */
+  /* ===================== VAULT SCHEMA ===================== */
 
   function newVault() {
     return {
+      version: 2,
       admin: {
         initialized: false,
-        email: null
+        email: null,
+        wrappedKey: null
       },
+      user: {
+        wrappedKey: null
+      },
+      fileKey: null,
+      driveRootId: null,
       createdAt: Date.now()
     };
   }
 
-  async function unlockVault(password) {
-    LOG("CORE", "unlock:start");
+  /* ===================== UNLOCK (USER) ===================== */
 
-    if (!password) throw new Error("empty-password");
-
+  async function unlockVault(userPassword) {
     const stored = await dbGet("vault");
 
+    // ---------- first run ----------
     if (!stored) {
-      vaultData = newVault();
-      MASTER_PASSWORD = password;
-      UNLOCKED = true;
-      readOnly = false;
+      const vault = newVault();
 
-      const encrypted = await encrypt(password, vaultData);
-      dbPut("vault", encrypted);
+      const adminKey = await deriveKey(userPassword, "admin-key");
+      const userKey = await deriveKey(userPassword, "user-key");
 
-      LOG("CORE", "unlock:first-run");
+      const fileKeyRaw = crypto.getRandomValues(new Uint8Array(32));
+      const fileKeyCrypto = await crypto.subtle.importKey(
+        "raw",
+        fileKeyRaw,
+        "AES-GCM",
+        false,
+        ["encrypt", "decrypt"]
+      );
+
+      vault.admin.wrappedKey = await aesEncrypt(adminKey, fileKeyRaw);
+      vault.user.wrappedKey = await aesEncrypt(userKey, fileKeyRaw);
+      vault.fileKey = await aesEncrypt(adminKey, fileKeyRaw);
+
+      dbPut("vault", vault);
+
+      ADMIN_KEY = adminKey;
+      USER_KEY = userKey;
+      FILE_KEY = fileKeyCrypto;
+
+      window.vaultData = vault;
+      window.readOnly = false;
+
       return true;
     }
 
+    // ---------- existing vault ----------
     try {
-      vaultData = await decrypt(password, stored);
-      MASTER_PASSWORD = password;
-      UNLOCKED = true;
-      readOnly = !vaultData.admin.initialized;
+      const userKey = await deriveKey(userPassword, "user-key");
+      const fileKeyRaw =
+        await aesDecrypt(userKey, stored.user.wrappedKey);
 
-      LOG("CORE", "unlock:success");
+      FILE_KEY = await crypto.subtle.importKey(
+        "raw",
+        fileKeyRaw,
+        "AES-GCM",
+        false,
+        ["encrypt", "decrypt"]
+      );
+
+      USER_KEY = userKey;
+      ADMIN_KEY = null;
+
+      DRIVE_ROOT = stored.driveRootId || null;
+
+      window.vaultData = stored;
+      window.readOnly = false;
+
       return true;
     } catch {
-      LOG("CORE", "unlock:wrong-password");
       throw new Error("wrong-password");
     }
   }
 
-  async function saveVault() {
-    if (!UNLOCKED) throw new Error("vault-locked");
-    const encrypted = await encrypt(MASTER_PASSWORD, vaultData);
-    dbPut("vault", encrypted);
-    LOG("CORE", "vault:saved");
-  }
+  /* ===================== ADMIN VERIFY ===================== */
 
-  /* ===================== ADMIN ===================== */
+  async function verifyAdmin(adminPassword) {
+    if (!vaultData?.admin?.wrappedKey)
+      throw new Error("no-admin");
+
+    const adminKey = await deriveKey(adminPassword, "admin-key");
+    const fileKeyRaw =
+      await aesDecrypt(adminKey, vaultData.admin.wrappedKey);
+
+    FILE_KEY = await crypto.subtle.importKey(
+      "raw",
+      fileKeyRaw,
+      "AES-GCM",
+      false,
+      ["encrypt", "decrypt"]
+    );
+
+    ADMIN_KEY = adminKey;
+    window.readOnly = false;
+  }
 
   function isAdmin() {
-    return vaultData?.admin?.initialized === true;
-  }
-
-  async function verifyAdmin(password) {
-    if (!UNLOCKED || password !== MASTER_PASSWORD) {
-      throw new Error("not-admin");
-    }
+    return !!ADMIN_KEY;
   }
 
   function setAdmin(email) {
     vaultData.admin.initialized = true;
     vaultData.admin.email = email;
-    readOnly = false;
-    saveVault();
+    dbPut("vault", vaultData);
+  }
+
+  /* ===================== USER PASSWORD ROTATION ===================== */
+
+  async function rotateUserPassword(newPassword) {
+    if (!ADMIN_KEY) throw new Error("not-admin");
+
+    const newUserKey = await deriveKey(newPassword, "user-key");
+    const fileKeyRaw =
+      await aesDecrypt(ADMIN_KEY, vaultData.fileKey);
+
+    vaultData.user.wrappedKey =
+      await aesEncrypt(newUserKey, fileKeyRaw);
+
+    USER_KEY = newUserKey;
+    dbPut("vault", vaultData);
   }
 
   /* ===================== DRIVE ROOT ===================== */
 
-  let DRIVE_ROOT = null;
-
   function setDriveRoot(id) {
     DRIVE_ROOT = id;
-    LOG("CORE", "drive:root-set", id);
+    vaultData.driveRootId = id;
+    dbPut("vault", vaultData);
   }
 
   function driveRoot() {
     return DRIVE_ROOT;
   }
 
-  /* ===================== FILE CONTENT (PURE) ===================== */
+  /* ===================== FILE CRYPTO ===================== */
 
-  async function encryptForFile(htmlString) {
-    if (!UNLOCKED) throw new Error("vault-locked");
-
-    const key = await deriveKey(MASTER_PASSWORD);
+  async function encryptForFile(text) {
+    if (!FILE_KEY) throw new Error("locked");
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const data = enc.encode(htmlString);
-
     const buf = await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
-      key,
-      data
+      FILE_KEY,
+      enc.encode(text)
     );
-
     const out = new Uint8Array(iv.length + buf.byteLength);
     out.set(iv, 0);
     out.set(new Uint8Array(buf), iv.length);
@@ -218,53 +265,30 @@
   }
 
   async function decryptForFile(bytes) {
-    if (!UNLOCKED || !bytes || bytes.length < 13) return "";
-
+    if (!FILE_KEY || !bytes) return "";
     const iv = bytes.slice(0, 12);
     const data = bytes.slice(12);
-    const key = await deriveKey(MASTER_PASSWORD);
-
     const buf = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv },
-      key,
+      FILE_KEY,
       data
     );
-
     return dec.decode(buf);
   }
-
-  /* ===================== AUTO LOCK ===================== */
-
-  const AUTO_LOCK_MS = 60_000;
-  let lockTimer = null;
-
-  function resetAutoLock() {
-    clearTimeout(lockTimer);
-    lockTimer = setTimeout(() => {
-      LOG("CORE", "auto-lock");
-      location.reload();
-    }, AUTO_LOCK_MS);
-  }
-
-  ["mousemove","keydown","mousedown","touchstart"].forEach(e =>
-    document.addEventListener(e, resetAutoLock, true)
-  );
 
   /* ===================== EXPORT ===================== */
 
   window.core = {
     unlockVault,
-    saveVault,
-    isAdmin,
     verifyAdmin,
+    rotateUserPassword,
+    isAdmin,
     setAdmin,
     setDriveRoot,
     driveRoot,
     encryptForFile,
     decryptForFile
   };
-
-  /* ===================== INIT ===================== */
 
   openDB();
 })();

@@ -1,10 +1,9 @@
 /* drive.js */
 "use strict";
 /* =========================================================
-   DRIVE — PURE GOOGLE DRIVE I/O (MANUAL ONLY)
-   - NO polling
-   - NO cache
-   - NO UI events
+   DRIVE — MANUAL GOOGLE DRIVE I/O
+   - SINGLE ADMIN-BOUND GOOGLE ACCOUNT
+   - HARD REJECT ON ACCOUNT MISMATCH
 ========================================================= */
 
 (() => {
@@ -14,15 +13,12 @@
   let driveReady = false;
 
   const DRIVE_FOLDER_NAME = "SecureText";
-
-  /* ===================== LOG ===================== */
+  const DB_NAME = "securetext";
+  const STORE = "vault";
 
   const log = (m, d) => LOG("DRIVE", m, d);
 
-  /* ===================== IDB (ROOT ONLY) ===================== */
-
-  const DB_NAME = "securetext";
-  const STORE = "vault";
+  /* ===================== IDB ===================== */
 
   function idbGet(key) {
     return new Promise(resolve => {
@@ -43,6 +39,15 @@
         .objectStore(STORE)
         .put(val, key);
     };
+  }
+
+  function hardDisconnect(reason) {
+    accessToken = null;
+    profileEmail = null;
+    driveReady = false;
+    log("blocked", reason);
+    updateUI(false, reason);
+    throw new Error(reason);
   }
 
   /* ===================== OAUTH ===================== */
@@ -68,6 +73,19 @@
     accessToken = resp.access_token;
     profileEmail = await fetchProfile();
 
+    // ---- enforce allowed Google account ----
+    const allowed = await idbGet("allowedGoogleEmail");
+
+    if (allowed && allowed !== profileEmail) {
+      hardDisconnect("wrong-google-account");
+    }
+
+    if (!allowed) {
+      // first admin-approved account
+      idbPut("allowedGoogleEmail", profileEmail);
+      log("google-account-locked", profileEmail);
+    }
+
     let rootId = await idbGet("driveRootId");
     if (!rootId) {
       rootId = await ensureRootFolder();
@@ -78,7 +96,7 @@
     driveReady = true;
     updateUI(true);
 
-    log("ready");
+    log("ready", profileEmail);
   }
 
   function connect() {
@@ -102,7 +120,8 @@
       "https://www.googleapis.com/oauth2/v2/userinfo",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
-    return (await r.json()).email;
+    const j = await r.json();
+    return j.email;
   }
 
   /* ===================== ROOT ===================== */
@@ -133,6 +152,7 @@
   /* ===================== METADATA OPS ===================== */
 
   async function listChildren(parentId) {
+    ensureReady();
     const q = `'${parentId}' in parents and trashed=false`;
     const r = await gFetch(
       `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType)`
@@ -141,6 +161,7 @@
   }
 
   async function createFolder(name, parentId) {
+    ensureReady();
     await gFetch("https://www.googleapis.com/drive/v3/files", "POST", {
       name,
       mimeType: "application/vnd.google-apps.folder",
@@ -149,6 +170,7 @@
   }
 
   async function createFile(name, parentId) {
+    ensureReady();
     await gFetch("https://www.googleapis.com/drive/v3/files", "POST", {
       name,
       mimeType: "application/octet-stream",
@@ -157,6 +179,7 @@
   }
 
   async function rename(id, name) {
+    ensureReady();
     await gFetch(
       `https://www.googleapis.com/drive/v3/files/${id}`,
       "PATCH",
@@ -165,6 +188,7 @@
   }
 
   async function trash(id) {
+    ensureReady();
     await gFetch(
       `https://www.googleapis.com/drive/v3/files/${id}`,
       "PATCH",
@@ -175,7 +199,7 @@
   /* ===================== CONTENT I/O ===================== */
 
   async function loadFile(fileId) {
-    log("fetch:file", fileId);
+    ensureReady();
     const r = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -184,6 +208,7 @@
   }
 
   async function saveFile(fileId, bytes) {
+    ensureReady();
     await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
       {
@@ -212,14 +237,25 @@
     return r.json();
   }
 
+  function ensureReady() {
+    if (!driveReady) throw new Error("drive-not-ready");
+  }
+
   /* ===================== UI ===================== */
 
-  function updateUI(connected) {
+  function updateUI(connected, err) {
     const el = document.getElementById("driveStatus");
-    if (el)
-      el.textContent = connected
-        ? `Connected (${profileEmail})`
-        : "Not connected";
+    if (!el) return;
+
+    if (!connected) {
+      el.textContent =
+        err === "wrong-google-account"
+          ? "Blocked: wrong Google account"
+          : "Not connected";
+      return;
+    }
+
+    el.textContent = `Connected (${profileEmail})`;
   }
 
   /* ===================== EXPORT ===================== */
